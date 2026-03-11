@@ -1,0 +1,308 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f2fbff;
+  --foreground: #102133;
+  --panel: rgba(255, 255, 255, 0.9);
+  --panel-strong: rgba(255, 255, 255, 0.98);
+  --panel-muted: rgba(236, 248, 253, 0.88);
+  --border: rgba(65, 123, 160, 0.18);
+  --line: rgba(65, 123, 160, 0.12);
+  --text-muted: #567184;
+  --ocean: #1798d8;
+  --ocean-strong: #0d6f9b;
+  --ocean-soft: rgba(23, 152, 216, 0.12);
+  --ice: #f7fcff;
+  --coral: #ff7d92;
+  --coral-strong: #d95d78;
+  --coral-soft: rgba(255, 125, 146, 0.12);
+  --success: #1ab58a;
+  --success-soft: rgba(26, 181, 138, 0.12);
+  --warning: #f2a516;
+  --warning-soft: rgba(242, 165, 22, 0.14);
+  --danger: #e64d83;
+  --danger-soft: rgba(230, 77, 131, 0.12);
+  --shadow-color: rgba(16, 33, 51, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #06131d;
+    --foreground: #ebf7ff;
+    --panel: rgba(10, 27, 39, 0.84);
+    --panel-strong: rgba(13, 30, 43, 0.96);
+    --panel-muted: rgba(9, 31, 45, 0.8);
+    --border: rgba(112, 183, 223, 0.2);
+    --line: rgba(112, 183, 223, 0.12);
+    --text-muted: #9ab8c9;
+    --ocean: #55b7ea;
+    --ocean-strong: #99dcff;
+    --ocean-soft: rgba(85, 183, 234, 0.16);
+    --ice: #0b1e2b;
+    --coral: #ff8ea0;
+    --coral-strong: #ffc0cb;
+    --coral-soft: rgba(255, 142, 160, 0.16);
+    --success: #48d4a8;
+    --success-soft: rgba(72, 212, 168, 0.16);
+    --warning: #f5bf59;
+    --warning-soft: rgba(245, 191, 89, 0.16);
+    --danger: #ff7da7;
+    --danger-soft: rgba(255, 125, 167, 0.16);
+    --shadow-color: rgba(0, 0, 0, 0.34);
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(23, 152, 216, 0.18), transparent 32%),
+    radial-gradient(circle at top right, rgba(255, 125, 146, 0.12), transparent 24%),
+    linear-gradient(180deg, var(--ice) 0%, var(--background) 48%, color-mix(in srgb, var(--background) 88%, white) 100%);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: rgba(23, 152, 216, 0.2);
+}
+
+@layer components {
+  .fridge-page {
+    @apply min-h-screen px-6 py-10 sm:px-8 lg:px-10;
+  }
+
+  .fridge-shell {
+    @apply mx-auto grid w-full max-w-6xl gap-6;
+  }
+
+  .fridge-shell--narrow {
+    @apply mx-auto grid w-full max-w-4xl gap-6;
+  }
+
+  .fridge-hero {
+    @apply relative grid gap-5 overflow-hidden rounded-[32px] px-6 py-8 sm:px-8;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--panel-strong) 0%, var(--panel-muted) 62%, rgba(255, 255, 255, 0.82) 100%);
+    box-shadow: 0 24px 72px var(--shadow-color);
+  }
+
+  .fridge-hero::before {
+    content: "";
+    position: absolute;
+    inset: auto auto -5rem -5rem;
+    width: 12rem;
+    height: 12rem;
+    border-radius: 9999px;
+    background: radial-gradient(circle, var(--ocean-soft) 0%, transparent 68%);
+    pointer-events: none;
+  }
+
+  .fridge-hero::after {
+    content: "";
+    position: absolute;
+    inset: -4rem -4rem auto auto;
+    width: 14rem;
+    height: 14rem;
+    border-radius: 9999px;
+    background: radial-gradient(circle, var(--coral-soft) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .fridge-panel {
+    @apply rounded-[28px] p-6 backdrop-blur-md;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    box-shadow: 0 18px 56px rgba(16, 33, 51, 0.08);
+  }
+
+  .fridge-panel-muted {
+    @apply rounded-[24px] p-5;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel-muted) 82%, white);
+  }
+
+  .fridge-panel-tint {
+    @apply rounded-[24px] p-5;
+    border: 1px solid rgba(23, 152, 216, 0.16);
+    background: linear-gradient(180deg, rgba(23, 152, 216, 0.08) 0%, rgba(255, 255, 255, 0.66) 100%);
+  }
+
+  .fridge-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.26em];
+    color: var(--text-muted);
+  }
+
+  .fridge-chip {
+    @apply inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium;
+    border-color: var(--border);
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text-muted);
+  }
+
+  .fridge-chip--ocean {
+    border-color: rgba(23, 152, 216, 0.2);
+    background: var(--ocean-soft);
+    color: var(--ocean-strong);
+  }
+
+  .fridge-chip--coral {
+    border-color: rgba(255, 125, 146, 0.2);
+    background: var(--coral-soft);
+    color: var(--coral-strong);
+  }
+
+  .fridge-chip--success {
+    border-color: rgba(26, 181, 138, 0.2);
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  .fridge-chip--warning {
+    border-color: rgba(242, 165, 22, 0.2);
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+
+  .fridge-chip--danger {
+    border-color: rgba(230, 77, 131, 0.2);
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .fridge-button-primary,
+  .fridge-button-secondary,
+  .fridge-button-ghost,
+  .fridge-button-danger {
+    @apply inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .fridge-button-primary {
+    background: linear-gradient(135deg, var(--ocean) 0%, var(--ocean-strong) 100%);
+    color: white;
+    box-shadow: 0 12px 24px rgba(23, 152, 216, 0.2);
+  }
+
+  .fridge-button-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(23, 152, 216, 0.24);
+  }
+
+  .fridge-button-secondary {
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--foreground);
+  }
+
+  .fridge-button-secondary:hover {
+    border-color: rgba(23, 152, 216, 0.3);
+    color: var(--ocean-strong);
+  }
+
+  .fridge-button-ghost {
+    color: var(--text-muted);
+  }
+
+  .fridge-button-ghost:hover {
+    color: var(--foreground);
+  }
+
+  .fridge-button-danger {
+    background: linear-gradient(135deg, var(--danger) 0%, #d63e72 100%);
+    color: white;
+    box-shadow: 0 12px 24px rgba(230, 77, 131, 0.18);
+  }
+
+  .fridge-input,
+  .fridge-select,
+  .fridge-textarea {
+    @apply rounded-2xl px-4 py-3 text-sm outline-none transition;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--foreground);
+  }
+
+  .fridge-input:focus,
+  .fridge-select:focus,
+  .fridge-textarea:focus {
+    border-color: rgba(23, 152, 216, 0.46);
+    box-shadow: 0 0 0 4px rgba(23, 152, 216, 0.1);
+  }
+
+  .fridge-input:disabled,
+  .fridge-select:disabled,
+  .fridge-textarea:disabled {
+    cursor: not-allowed;
+    opacity: 0.64;
+  }
+
+  .fridge-textarea {
+    @apply resize-y;
+  }
+
+  .fridge-step-grid {
+    @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .fridge-step-card {
+    @apply rounded-[24px] p-4 text-sm leading-6;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.68);
+  }
+
+  .fridge-step-number {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold;
+    background: var(--ocean-soft);
+    color: var(--ocean-strong);
+  }
+
+  .fridge-state {
+    @apply rounded-[24px] p-4 text-sm leading-6;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.78);
+  }
+
+  .fridge-state--success {
+    border-color: rgba(26, 181, 138, 0.2);
+    background: var(--success-soft);
+    color: color-mix(in srgb, var(--success) 78%, black);
+  }
+
+  .fridge-state--warning {
+    border-color: rgba(242, 165, 22, 0.2);
+    background: var(--warning-soft);
+    color: color-mix(in srgb, var(--warning) 78%, black);
+  }
+
+  .fridge-state--error {
+    border-color: rgba(230, 77, 131, 0.2);
+    background: var(--danger-soft);
+    color: color-mix(in srgb, var(--danger) 78%, black);
+  }
+
+  .fridge-state--info {
+    border-color: rgba(23, 152, 216, 0.2);
+    background: var(--ocean-soft);
+    color: color-mix(in srgb, var(--ocean-strong) 88%, black);
+  }
+
+  .fridge-detail-list {
+    @apply grid gap-3 text-sm;
+  }
+
+  .fridge-detail-item {
+    @apply rounded-2xl px-4 py-3;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.7);
+  }
+}

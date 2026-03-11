@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { createFailureResponse, normalizeOperationResult, getErrorDetails, resolveResultStatus, ErrorCodes } from "@/lib/api-response";
+import { normalizeGitConfig } from "@/lib/git-config";
+import { testGitConfiguration } from "@/lib/git-config.server";
+import { logServerError } from "@/lib/server-logger";
+import type { GitRepositoryConfig } from "@/types";
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as Partial<GitRepositoryConfig>;
+
+    if (!body || typeof body !== "object") {
+      return createFailureResponse({
+        status: 400,
+        message: "无效的 Git 配置请求。",
+        details: "请求体必须是合法的 Git 配置对象。",
+        errorCode: ErrorCodes.GIT_CONFIG_INVALID,
+      });
+    }
+
+    const config = normalizeGitConfig({
+      repository: body.repository ?? "",
+      kind: body.kind ?? "local",
+      auth: body.auth ?? { method: "none" },
+      updatedAt: body.updatedAt ?? null,
+    });
+    const result = await testGitConfiguration(config);
+
+    return NextResponse.json(normalizeOperationResult(result), {
+      status: resolveResultStatus(result),
+    });
+  } catch (error) {
+    logServerError("api.git-config.test", error);
+
+    return createFailureResponse({
+      status: 500,
+      message: "Git 配置测试接口执行失败。",
+      details: getErrorDetails(error),
+      errorCode: ErrorCodes.GIT_CONFIG_TEST_FAILED,
+      checkedAt: new Date().toISOString(),
+    });
+  }
+}

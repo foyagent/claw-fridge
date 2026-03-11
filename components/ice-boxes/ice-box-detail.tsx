@@ -1,0 +1,1302 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
+import { useMounted } from "@/hooks/use-mounted";
+import { isEncryptionEnabled } from "@/lib/backup-encryption";
+import {
+  calculateIceBoxReminderSnapshot,
+  getIceBoxReminderPresetMeta,
+  normalizeIceBoxReminderConfig,
+} from "@/lib/ice-box-reminders";
+import {
+  buildSkillLink,
+  buildUploadUrl,
+  formatDateTime,
+  formatLastBackupTime,
+  getIceBoxBackupModeMeta,
+  getIceBoxStatusMeta,
+} from "@/lib/ice-boxes";
+import { useAppStore } from "@/store/app-store";
+import { useIceBoxStore } from "@/store/ice-box-store";
+import type {
+  IceBoxHistoryEntry,
+  IceBoxHistoryResult,
+  IceBoxReminderConfig,
+  IceBoxReminderPreset,
+  RestoreBackupResult,
+  RestorePreviewResult,
+} from "@/types";
+
+function IceBoxDetailSkeleton() {
+  return (
+    <section className="fridge-panel grid gap-6">
+      <div className="space-y-3">
+        <div className="h-4 w-24 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
+        <div className="h-10 w-56 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
+        <div className="h-4 w-80 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="h-72 animate-pulse rounded-[24px] bg-zinc-100 dark:bg-white/5" />
+        <div className="h-72 animate-pulse rounded-[24px] bg-zinc-100 dark:bg-white/5" />
+      </div>
+    </section>
+  );
+}
+
+function statusClassName(status: "healthy" | "syncing" | "attention") {
+  if (status === "healthy") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  if (status === "syncing") {
+    return "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  }
+
+  return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+}
+
+function reminderStatusClassName(status: "disabled" | "scheduled" | "due" | "overdue") {
+  if (status === "disabled") {
+    return "border-zinc-300/80 bg-zinc-100 text-zinc-700 dark:border-white/10 dark:bg-white/10 dark:text-zinc-200";
+  }
+
+  if (status === "scheduled") {
+    return "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  }
+
+  if (status === "due") {
+    return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+
+  return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
+}
+
+function formatCommit(commit: string | null | undefined) {
+  if (!commit) {
+    return "--";
+  }
+
+  return commit.slice(0, 8);
+}
+
+function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="fridge-state fridge-state--error flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="font-medium">冰盒详情加载失败</p>
+        <p className="mt-1 opacity-90">{message}</p>
+      </div>
+      <button type="button" onClick={onRetry} className="fridge-button-secondary">
+        重试加载
+      </button>
+    </div>
+  );
+}
+
+function ResultDetails({ details }: { details: string }) {
+  return (
+    <details className="mt-3 rounded-xl bg-black/5 p-3 text-xs leading-5 text-current dark:bg-black/20">
+      <summary className="cursor-pointer font-medium">查看细节</summary>
+      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{details}</pre>
+    </details>
+  );
+}
+
+export function IceBoxDetail({ id }: { id: string }) {
+  const mounted = useMounted();
+  const router = useRouter();
+  const gitConfig = useAppStore((state) => state.gitConfig);
+  const iceBoxes = useIceBoxStore((state) => state.iceBoxes);
+  const hasHydrated = useIceBoxStore((state) => state.hasHydrated);
+  const hasLoaded = useIceBoxStore((state) => state.hasLoaded);
+  const isLoading = useIceBoxStore((state) => state.isLoading);
+  const error = useIceBoxStore((state) => state.error);
+  const loadIceBoxes = useIceBoxStore((state) => state.loadIceBoxes);
+  const updateIceBoxReminder = useIceBoxStore((state) => state.updateIceBoxReminder);
+  const resetIceBoxReminder = useIceBoxStore((state) => state.resetIceBoxReminder);
+  const syncIceBoxBackupState = useIceBoxStore((state) => state.syncIceBoxBackupState);
+  const deleteIceBox = useIceBoxStore((state) => state.deleteIceBox);
+  const clearError = useIceBoxStore((state) => state.clearError);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [hasDeleted, setHasDeleted] = useState(false);
+  const [restoreTargetRootDir, setRestoreTargetRootDir] = useState("");
+  const [restorePreview, setRestorePreview] = useState<RestorePreviewResult | null>(null);
+  const [restoreResult, setRestoreResult] = useState<RestoreBackupResult | null>(null);
+  const [restoreError, setRestoreError] = useState<OperationNotice | null>(null);
+  const [isPreviewingRestore, setIsPreviewingRestore] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [replaceExistingRestoreTarget, setReplaceExistingRestoreTarget] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<IceBoxHistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState<OperationNotice | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<IceBoxHistoryEntry | null>(null);
+  const [reminderDraft, setReminderDraft] = useState<IceBoxReminderConfig | null>(null);
+  const [reminderNotice, setReminderNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!mounted || !hasHydrated || hasLoaded) {
+      return;
+    }
+
+    void loadIceBoxes();
+  }, [hasHydrated, hasLoaded, loadIceBoxes, mounted]);
+
+  const iceBox = useMemo(() => {
+    return iceBoxes.find((item) => item.id === id) ?? null;
+  }, [iceBoxes, id]);
+
+  useEffect(() => {
+    setReminderDraft(iceBox?.reminder ?? null);
+    setReminderNotice(null);
+  }, [iceBox]);
+
+  useEffect(() => {
+    setRestoreTargetRootDir("");
+    setRestorePreview(null);
+    setRestoreResult(null);
+    setRestoreError(null);
+    setConfirmRestore(false);
+    setReplaceExistingRestoreTarget(false);
+    setHistoryEntries([]);
+    setHistoryError(null);
+    setIsLoadingHistory(false);
+    setHasLoadedHistory(false);
+    setSelectedHistoryEntry(null);
+  }, [id]);
+
+  const hasConfiguredRepository = Boolean(gitConfig.repository.trim());
+  const shouldConfirmOverwrite = Boolean(
+    restorePreview?.targetExists || restoreResult?.requiresOverwriteConfirmation,
+  );
+  const canExecuteRestore =
+    hasConfiguredRepository &&
+    Boolean(restoreTargetRootDir.trim()) &&
+    confirmRestore &&
+    (!shouldConfirmOverwrite || replaceExistingRestoreTarget) &&
+    !isPreviewingRestore &&
+    !isRestoring;
+  const restoreHint = useMemo(() => {
+    if (!hasConfiguredRepository) {
+      return "先回首页保存并测试 Git 仓库连接，恢复接口才能知道该去哪里拉取备份。";
+    }
+
+    if (!restoreTargetRootDir.trim()) {
+      return "先填写恢复目标目录，实际写入会固定收口到该目录下的 `.openclaw`。";
+    }
+
+    if (!confirmRestore) {
+      return "勾选恢复确认后，才能真正执行恢复。";
+    }
+
+    if (shouldConfirmOverwrite && !replaceExistingRestoreTarget) {
+      return "检测到目标目录里已经有 `.openclaw`，请确认允许先备份旧目录再覆盖恢复。";
+    }
+
+    return null;
+  }, [confirmRestore, hasConfiguredRepository, replaceExistingRestoreTarget, restoreTargetRootDir, shouldConfirmOverwrite]);
+
+  async function handleRetry() {
+    clearError();
+    await loadIceBoxes();
+  }
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    setDeleteError(null);
+    clearError();
+
+    try {
+      await deleteIceBox(id);
+      setHasDeleted(true);
+      router.replace("/");
+    } catch (actionError) {
+      setDeleteError(actionError instanceof Error ? actionError.message : "删除冰盒失败，请稍后重试。");
+      setIsDeleting(false);
+      return;
+    }
+
+    setIsDeleting(false);
+  }
+
+  const loadHistory = useCallback(async (targetIceBoxId: string, machineId: string, branch: string) => {
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+
+    try {
+      const response = await fetch(`/api/ice-boxes/${targetIceBoxId}/history`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          machineId,
+          branch,
+          gitConfig,
+          limit: 20,
+        }),
+      });
+      const result = await readApiPayload<IceBoxHistoryResult>(response);
+
+      if (!response.ok || !result.ok) {
+        setHistoryEntries([]);
+        setHistoryError(toOperationNotice(result, "读取备份历史失败。"));
+        setHasLoadedHistory(true);
+        return;
+      }
+
+      const latestBackupAt = result.entries?.[0]?.committedAt ?? null;
+
+      setHistoryEntries(result.entries ?? []);
+      setHistoryError(null);
+      setHasLoadedHistory(true);
+      syncIceBoxBackupState(targetIceBoxId, latestBackupAt);
+      setSelectedHistoryEntry((currentEntry) => {
+        if (!currentEntry) {
+          return null;
+        }
+
+        return (result.entries ?? []).find((entry) => entry.commit === currentEntry.commit) ?? null;
+      });
+    } catch (actionError) {
+      setHistoryEntries([]);
+      setHistoryError(toRequestFailureNotice("读取备份历史时", actionError));
+      setHasLoadedHistory(true);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [gitConfig, syncIceBoxBackupState]);
+
+  useEffect(() => {
+    if (!mounted || !iceBox || !hasConfiguredRepository || isLoadingHistory) {
+      return;
+    }
+
+    if (hasLoadedHistory) {
+      return;
+    }
+
+    void loadHistory(iceBox.id, iceBox.machineId, iceBox.branch);
+  }, [hasConfiguredRepository, hasLoadedHistory, iceBox, isLoadingHistory, loadHistory, mounted]);
+
+  function handleSelectHistoryEntry(entry: IceBoxHistoryEntry) {
+    setSelectedHistoryEntry(entry);
+    setRestorePreview(null);
+    setRestoreResult(null);
+    setRestoreError(null);
+    document.getElementById("restore-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function handleRestorePreview() {
+    if (!iceBox) {
+      return;
+    }
+
+    setIsPreviewingRestore(true);
+    setRestoreError(null);
+    setRestoreResult(null);
+
+    try {
+      const response = await fetch(`/api/ice-boxes/${iceBox.id}/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "preview",
+          backupMode: iceBox.backupMode,
+          machineId: iceBox.machineId,
+          branch: iceBox.branch,
+          commit: selectedHistoryEntry?.commit,
+          gitConfig,
+          targetRootDir: restoreTargetRootDir.trim() || undefined,
+        }),
+      });
+      const result = await readApiPayload<RestorePreviewResult>(response);
+
+      if (!response.ok || !result.ok) {
+        setRestorePreview(null);
+        setRestoreError(toOperationNotice(result, "恢复预览失败。"));
+        return;
+      }
+
+      setRestorePreview(result);
+      setReplaceExistingRestoreTarget(Boolean(result.targetExists));
+    } catch (actionError) {
+      setRestorePreview(null);
+      setRestoreError(toRequestFailureNotice("加载恢复预览时", actionError));
+    } finally {
+      setIsPreviewingRestore(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (!iceBox) {
+      return;
+    }
+
+    setIsRestoring(true);
+    setRestoreError(null);
+    setRestoreResult(null);
+
+    try {
+      const response = await fetch(`/api/ice-boxes/${iceBox.id}/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "restore",
+          backupMode: iceBox.backupMode,
+          machineId: iceBox.machineId,
+          branch: iceBox.branch,
+          commit: selectedHistoryEntry?.commit,
+          gitConfig,
+          targetRootDir: restoreTargetRootDir.trim(),
+          confirmRestore,
+          replaceExisting: replaceExistingRestoreTarget,
+        }),
+      });
+      const result = await readApiPayload<RestoreBackupResult>(response);
+
+      setRestoreResult(result);
+
+      if (!response.ok || !result.ok) {
+        setRestoreError(toOperationNotice(result, "恢复备份失败。"));
+        return;
+      }
+
+      setRestorePreview(null);
+      setConfirmRestore(false);
+      syncIceBoxBackupState(iceBox.id, result.lastBackupAt ?? iceBox.lastBackupAt);
+    } catch (actionError) {
+      setRestoreResult(null);
+      setRestoreError(toRequestFailureNotice("执行恢复时", actionError));
+    } finally {
+      setIsRestoring(false);
+    }
+  }
+
+  function handleReminderPresetChange(nextPreset: IceBoxReminderPreset) {
+    setReminderNotice(null);
+    setReminderDraft((currentReminder) => {
+      const baseReminder = currentReminder ?? iceBox?.reminder;
+
+      if (!baseReminder) {
+        return currentReminder;
+      }
+
+      const nextIntervalHours =
+        nextPreset === "custom"
+          ? baseReminder.preset === "custom"
+            ? baseReminder.intervalHours
+            : getIceBoxReminderPresetMeta(nextPreset).intervalHours
+          : getIceBoxReminderPresetMeta(nextPreset).intervalHours;
+
+      return {
+        ...baseReminder,
+        preset: nextPreset,
+        intervalHours: nextIntervalHours,
+      };
+    });
+  }
+
+  function handleReminderSave() {
+    if (!iceBox || !reminderDraft) {
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const nextReminder = normalizeIceBoxReminderConfig(
+      {
+        ...reminderDraft,
+        updatedAt,
+      },
+      updatedAt,
+    );
+
+    updateIceBoxReminder(iceBox.id, nextReminder);
+    setReminderDraft(nextReminder);
+    setReminderNotice("提醒配置已保存。下次提醒时间和状态已同步刷新。");
+  }
+
+  function handleReminderReset() {
+    if (!iceBox) {
+      return;
+    }
+
+    resetIceBoxReminder(iceBox.id);
+    setReminderNotice("提醒配置已恢复为默认每周提醒。");
+  }
+
+  if (!mounted || !hasHydrated || (isLoading && !hasLoaded)) {
+    return <IceBoxDetailSkeleton />;
+  }
+
+  if (hasDeleted) {
+    return (
+      <section className="grid gap-5 rounded-[28px] border border-emerald-500/20 bg-emerald-500/10 p-8 text-center text-emerald-800 shadow-sm shadow-emerald-500/10 dark:text-emerald-200">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white/70 text-3xl dark:bg-black/10">
+          ✅
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold">冰盒已删除</h1>
+          <p className="text-sm leading-6 opacity-90 sm:text-base">正在带你回到冰盒列表，冷冻室已经收拾干净了。</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!iceBox && error) {
+    return (
+      <section className="grid gap-5 rounded-[28px] border border-black/10 bg-white/90 p-8 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-white/5">
+        <ErrorBanner message={error} onRetry={() => void handleRetry()} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
+          >
+            返回冰盒列表
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  if (!iceBox) {
+    return (
+      <section className="grid gap-5 rounded-[28px] border border-black/10 bg-white/90 p-8 text-center shadow-sm shadow-black/5 dark:border-white/10 dark:bg-white/5">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100 text-3xl dark:bg-white/10">
+          🧭
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">没有找到这个冰盒</h1>
+          <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400 sm:text-base">
+            可能是当前设备还没同步到本地存储，也可能这个冰盒尚未创建。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
+          >
+            返回冰盒列表
+          </Link>
+          <Link
+            href="/ice-boxes/new"
+            className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            创建新冰盒
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  const statusMeta = getIceBoxStatusMeta(iceBox.status);
+  const backupModeMeta = getIceBoxBackupModeMeta(iceBox.backupMode);
+  const encryptionEnabled = isEncryptionEnabled(iceBox.skillConfig.encryption);
+  const latestHistoryEntry = historyEntries[0] ?? null;
+  const effectiveLastBackupAt = latestHistoryEntry?.committedAt ?? iceBox.lastBackupAt;
+  const effectiveReminder = reminderDraft ?? iceBox.reminder;
+  const reminderSnapshot = calculateIceBoxReminderSnapshot({
+    reminder: effectiveReminder,
+    createdAt: iceBox.createdAt,
+    lastBackupAt: effectiveLastBackupAt,
+  });
+  const origin = window.location.origin;
+  const skillLink = buildSkillLink(origin, iceBox.skillConfig);
+  const uploadUrl = buildUploadUrl(origin, iceBox.uploadPath);
+
+  return (
+    <section className="grid gap-6">
+      <div className="fridge-hero">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/" className="fridge-button-ghost px-0 py-0">
+              ← 返回冰盒列表
+            </Link>
+            <span className="fridge-chip fridge-chip--ocean">{backupModeMeta.label}</span>
+            <span className={`fridge-chip ${iceBox.backupMode === "upload-token" ? "fridge-chip--coral" : "fridge-chip--success"}`}>
+              {iceBox.backupMode === "upload-token" ? "上传模式" : "Git 直推"}
+            </span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{iceBox.name}</h1>
+              <span className={`rounded-full border px-3 py-1 text-sm font-medium ${statusClassName(iceBox.status)}`}>
+                {statusMeta.label}
+              </span>
+            </div>
+            <p className="max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400 sm:text-base">
+              {statusMeta.description}
+            </p>
+          </div>
+        </div>
+
+        <div className="fridge-panel-tint flex flex-wrap items-center gap-3 text-sm leading-6 text-zinc-700 dark:text-zinc-200">
+          <p>先看状态与连接信息，再去备份历史挑版本，最后在恢复面板里执行预览与恢复。</p>
+          <Link href="/ice-boxes/new" className="fridge-button-primary">
+            创建新冰盒
+          </Link>
+        </div>
+      </div>
+
+      {error ? <ErrorBanner message={error} onRetry={() => void handleRetry()} /> : null}
+
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">基本信息</h2>
+          <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>冰盒名称</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{iceBox.name}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>机器 ID</dt>
+              <dd className="font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.machineId}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>分支名称</dt>
+              <dd className="font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.branch}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>备份方案</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>上传加密</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                {encryptionEnabled ? "已启用 AES-256-GCM" : "未启用"}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>创建时间</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.createdAt)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>最后更新</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.updatedAt)}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">备份状态</h2>
+          <div className="rounded-[24px] bg-white p-5 dark:bg-white/5">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">最后备份时间</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+              {formatLastBackupTime(effectiveLastBackupAt)}
+            </p>
+            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              后续任务可在这里继续补充手动备份、上传 token 和最近任务日志等信息。
+            </p>
+          </div>
+          <div className="grid gap-3 rounded-[24px] border border-zinc-200/80 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">定时备份提醒</p>
+                <p className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">{reminderSnapshot.statusLabel}</p>
+              </div>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${reminderStatusClassName(reminderSnapshot.status)}`}
+              >
+                {reminderSnapshot.statusLabel}
+              </span>
+            </div>
+            <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">{reminderSnapshot.statusDescription}</p>
+            <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+              <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
+                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提醒配置</dt>
+                <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{reminderSnapshot.configLabel}</dd>
+              </div>
+              <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
+                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">下次提醒</dt>
+                <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
+                  {formatDateTime(reminderSnapshot.nextReminderAt)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 p-5 text-sm leading-6 text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">提醒配置</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                  提醒完全在本地 store 里生效：改完就持久化，详情页会立刻重算下次提醒时间和状态文案。
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  checked={effectiveReminder.enabled}
+                  onChange={(event) => {
+                    setReminderNotice(null);
+                    setReminderDraft((currentReminder) => {
+                      const baseReminder = currentReminder ?? iceBox.reminder;
+
+                      return {
+                        ...baseReminder,
+                        enabled: event.target.checked,
+                      };
+                    });
+                  }}
+                  className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
+                />
+                启用提醒
+              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-2">
+                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提醒节奏</span>
+                <select
+                  value={effectiveReminder.preset}
+                  onChange={(event) => handleReminderPresetChange(event.target.value as IceBoxReminderPreset)}
+                  className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
+                >
+                  <option value="daily">每天一次</option>
+                  <option value="every-3-days">每 3 天一次</option>
+                  <option value="weekly">每周一次</option>
+                  <option value="custom">自定义间隔</option>
+                </select>
+              </label>
+              <label className="grid gap-2">
+                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">缓冲窗口（小时）</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={effectiveReminder.graceHours}
+                  onChange={(event) => {
+                    setReminderNotice(null);
+                    setReminderDraft((currentReminder) => {
+                      const baseReminder = currentReminder ?? iceBox.reminder;
+
+                      return {
+                        ...baseReminder,
+                        graceHours: Math.max(1, Number(event.target.value) || 1),
+                      };
+                    });
+                  }}
+                  className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
+                />
+              </label>
+            </div>
+
+            {effectiveReminder.preset === "custom" ? (
+              <label className="grid gap-2">
+                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">自定义提醒间隔（小时）</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={effectiveReminder.intervalHours}
+                  onChange={(event) => {
+                    setReminderNotice(null);
+                    setReminderDraft((currentReminder) => {
+                      const baseReminder = currentReminder ?? iceBox.reminder;
+
+                      return {
+                        ...baseReminder,
+                        intervalHours: Math.max(1, Number(event.target.value) || 1),
+                      };
+                    });
+                  }}
+                  className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
+                />
+              </label>
+            ) : (
+              <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-950/50 dark:text-zinc-300">
+                当前选择：{getIceBoxReminderPresetMeta(effectiveReminder.preset).label}，默认间隔 {effectiveReminder.intervalHours} 小时。
+              </div>
+            )}
+
+            {reminderNotice ? (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
+                {reminderNotice}
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleReminderSave}
+                className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+              >
+                保存提醒配置
+              </button>
+              <button
+                type="button"
+                onClick={handleReminderReset}
+                className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
+              >
+                重置为默认
+              </button>
+            </div>
+
+            <p>
+              {encryptionEnabled
+                ? "上传链路加密已启用；提醒只负责提示补做备份，不会接触或保存主密钥。"
+                : "提醒只根据创建时间 / 最近备份时间计算，不依赖额外服务端任务。"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">Skill 文档</h2>
+          <div className="rounded-[24px] bg-white p-5 text-sm leading-6 text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
+            <p className="font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</p>
+            <p className="mt-2">{backupModeMeta.description}</p>
+            <p className="mt-4 text-zinc-500 dark:text-zinc-400">
+              Skill 会自动带上冰盒唯一标识、仓库信息，以及当前备份方案需要的配置字段。
+              {iceBox.backupMode === "upload-token"
+                ? encryptionEnabled
+                  ? " 上传模式会附带本地加密脚本、解密请求头和风险提示。"
+                  : " 上传模式还会附带 tar 打包命令、带进度条的 curl 上传命令、返回结果校验和重试说明。"
+                : " Git 模式会附带上游配置、同步脚本和定时任务模板。"}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Link
+                href={skillLink}
+                className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+              >
+                打开 Skill 文档
+              </Link>
+            </div>
+          </div>
+          <div className="rounded-[24px] border border-dashed border-zinc-300 p-5 text-sm leading-6 text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+            <p>Skill 链接</p>
+            <p className="mt-2 break-all font-mono text-xs text-zinc-800 dark:text-zinc-200">{skillLink}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">连接配置</h2>
+          <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Git 仓库</dt>
+              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.repository}</dd>
+            </div>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</dt>
+              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.branch}</dd>
+            </div>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">ice-box-id</dt>
+              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.iceBoxId}</dd>
+            </div>
+            {iceBox.backupMode === "upload-token" ? (
+              <>
+                <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传地址</dt>
+                  <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{uploadUrl ?? "未生成"}</dd>
+                </div>
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">上传 Token</dt>
+                  <dd className="mt-2 break-all font-mono text-xs text-amber-900 dark:text-amber-100">{iceBox.skillConfig.uploadToken}</dd>
+                </div>
+                <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传加密</dt>
+                  <dd className="mt-2 text-sm text-zinc-900 dark:text-zinc-100">
+                    {encryptionEnabled ? "已启用 AES-256-GCM / PBKDF2-SHA256" : "未启用"}
+                  </dd>
+                  {encryptionEnabled ? (
+                    <>
+                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        密钥策略：每次上传手动提供主密钥，默认不落盘保存。
+                      </dd>
+                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        KDF：{iceBox.skillConfig.encryption.kdf} / {iceBox.skillConfig.encryption.kdfIterations.toLocaleString("zh-CN")} 次
+                      </dd>
+                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        Salt：{iceBox.skillConfig.encryption.kdfSalt}
+                      </dd>
+                      {iceBox.skillConfig.encryption.keyHint ? (
+                        <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">密钥提示：{iceBox.skillConfig.encryption.keyHint}</dd>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </dl>
+        </div>
+      </div>
+
+      <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">备份历史</h2>
+            <p className="max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              展示当前冰盒分支上的历史快照。可以先从这里挑一个版本，再跳到下面的恢复流程继续操作。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!iceBox) {
+                return;
+              }
+
+              setHasLoadedHistory(false);
+              void loadHistory(iceBox.id, iceBox.machineId, iceBox.branch);
+            }}
+            disabled={!hasConfiguredRepository || isLoadingHistory}
+            className="inline-flex items-center justify-center rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
+          >
+            {isLoadingHistory ? "正在刷新..." : "刷新历史"}
+          </button>
+        </div>
+
+        {!hasConfiguredRepository ? (
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+            <p className="font-medium">还没配置 Git 仓库</p>
+            <p className="mt-1 opacity-90">先回首页保存并测试仓库连接，备份历史才能从远端仓库读取。</p>
+          </div>
+        ) : null}
+
+        {historyError ? (
+          <div className="flex flex-col gap-3 rounded-3xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">备份历史加载失败</p>
+              <p className="mt-1 opacity-90">{historyError.message}</p>
+              {historyError.details ? <ResultDetails details={historyError.details} /> : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!iceBox) {
+                  return;
+                }
+
+                void loadHistory(iceBox.id, iceBox.machineId, iceBox.branch);
+              }}
+              className="rounded-full border border-rose-500/20 bg-white/70 px-4 py-2 font-medium transition hover:bg-white dark:bg-black/10 dark:hover:bg-black/20"
+            >
+              重试加载
+            </button>
+          </div>
+        ) : null}
+
+        {isLoadingHistory ? (
+          <div className="grid gap-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={index}
+                className="rounded-[24px] border border-zinc-200/80 bg-white px-5 py-4 dark:border-white/10 dark:bg-white/5"
+              >
+                <div className="h-4 w-40 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
+                <div className="mt-3 h-4 w-72 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+                <div className="mt-4 grid gap-2 sm:grid-cols-4">
+                  <div className="h-4 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+                  <div className="h-4 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+                  <div className="h-4 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+                  <div className="h-4 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {!isLoadingHistory && hasConfiguredRepository && hasLoadedHistory && historyEntries.length === 0 && !historyError ? (
+          <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 bg-white/60 p-8 text-center dark:border-white/10 dark:bg-white/5">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 text-2xl dark:bg-white/10">
+              📭
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">这个冰盒还没有备份历史</h3>
+              <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                远端分支已经对上了，但还没扫到 commit。等第一次备份落到仓库后，这里就会显示历史列表。
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {!isLoadingHistory && historyEntries.length > 0 ? (
+          <div className="grid gap-3">
+            {historyEntries.map((entry) => {
+              const isSelected = selectedHistoryEntry?.commit === entry.commit;
+
+              return (
+                <div
+                  key={entry.commit}
+                  className={`rounded-[24px] border px-5 py-4 transition ${
+                    isSelected
+                      ? "border-sky-400/40 bg-sky-500/5 shadow-sm shadow-sky-500/10"
+                      : "border-zinc-200/80 bg-white dark:border-white/10 dark:bg-white/5"
+                  }`}
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{entry.summary}</p>
+                        <span className="rounded-full border border-zinc-200 px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:border-white/10 dark:text-zinc-300">
+                          {entry.branch}
+                        </span>
+                        {isSelected ? (
+                          <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+                            已选中恢复
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">{entry.message}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectHistoryEntry(entry)}
+                        className="inline-flex items-center justify-center rounded-full border border-sky-500/30 bg-white px-4 py-2 text-sm font-medium text-sky-700 transition hover:border-sky-500 hover:bg-sky-500/5 dark:bg-black/10 dark:text-sky-300 dark:hover:bg-sky-500/10"
+                      >
+                        恢复这个版本
+                      </button>
+                    </div>
+                  </div>
+
+                  <dl className="mt-4 grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提交时间</dt>
+                      <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(entry.committedAt)}</dd>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提交人</dt>
+                      <dd className="mt-2 text-zinc-900 dark:text-zinc-100">{entry.authorName}</dd>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Commit Hash</dt>
+                      <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{entry.commit}</dd>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">邮箱</dt>
+                      <dd className="mt-2 break-all text-zinc-900 dark:text-zinc-100">{entry.authorEmail ?? "--"}</dd>
+                    </div>
+                  </dl>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+
+      <div id="restore-panel" className="grid gap-4 rounded-[24px] border border-sky-500/20 bg-sky-500/5 p-5 shadow-sm shadow-sky-500/5">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">
+              Restore
+            </span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">两种备份方案都会统一回收到 Git 分支恢复</span>
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">恢复冰盒备份</h2>
+          <p className="max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            不管当前冰盒最初走的是 Git 直推还是压缩包上传，服务端都会从仓库里的专属分支读取 `.openclaw` 快照，再恢复到你指定的目标目录。已有 `.openclaw` 不会被直接覆盖，确认后会先挪到旁边的时间戳备份目录。
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="fridge-step-card">
+              <div className="mb-2 flex items-center gap-3">
+                <span className="fridge-step-number">1</span>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">先选快照</p>
+              </div>
+              <p className="text-zinc-600 dark:text-zinc-300">从“备份历史”里点选需要恢复的版本。</p>
+            </div>
+            <div className="fridge-step-card">
+              <div className="mb-2 flex items-center gap-3">
+                <span className="fridge-step-number">2</span>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">再看预览</p>
+              </div>
+              <p className="text-zinc-600 dark:text-zinc-300">确认目标目录、目标提交和覆盖前备份路径。</p>
+            </div>
+            <div className="fridge-step-card">
+              <div className="mb-2 flex items-center gap-3">
+                <span className="fridge-step-number">3</span>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">最后执行恢复</p>
+              </div>
+              <p className="text-zinc-600 dark:text-zinc-300">勾选确认后再执行，避免把错误快照恢复到错误目录。</p>
+            </div>
+          </div>
+        </div>
+
+        {selectedHistoryEntry ? (
+          <div className="flex flex-col gap-3 rounded-3xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-900 dark:text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">当前将恢复历史版本 {formatCommit(selectedHistoryEntry.commit)}</p>
+              <p className="mt-1 opacity-90">
+                {formatDateTime(selectedHistoryEntry.committedAt)} · {selectedHistoryEntry.authorName} · {selectedHistoryEntry.summary}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedHistoryEntry(null);
+                setRestorePreview(null);
+                setRestoreResult(null);
+                setRestoreError(null);
+              }}
+              className="rounded-full border border-sky-500/20 bg-white/70 px-4 py-2 font-medium transition hover:bg-white dark:bg-black/10 dark:hover:bg-black/20"
+            >
+              改回最新快照
+            </button>
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 rounded-[24px] bg-white/80 p-4 text-sm text-zinc-600 dark:bg-black/10 dark:text-zinc-300 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-3">
+            <label className="grid gap-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">恢复目标目录</span>
+              <input
+                type="text"
+                value={restoreTargetRootDir}
+                onChange={(event) => {
+                  setRestoreTargetRootDir(event.target.value);
+                  setRestorePreview(null);
+                  setRestoreResult(null);
+                  setRestoreError(null);
+                }}
+                placeholder="例如 /Users/claw"
+                className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">恢复来源</p>
+                <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
+                  {selectedHistoryEntry
+                    ? `${backupModeMeta.label} → 历史快照 ${formatCommit(selectedHistoryEntry.commit)}`
+                    : `${backupModeMeta.label} → Git 分支最新快照`}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">目标分支</p>
+                <p className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.branch}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 rounded-[20px] border border-dashed border-sky-500/20 p-4">
+            <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              先点“查看恢复预览”确认目标快照确实存在，再勾选确认执行恢复。目标目录必须是绝对路径，实际写入位置会固定收口到该目录下的 `.openclaw`。
+            </p>
+            {!hasConfiguredRepository ? (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                <p className="font-medium">还没配置 Git 仓库</p>
+                <p className="mt-1 opacity-90">先回首页保存并测试仓库连接，恢复接口才能知道该去哪里拉取备份。</p>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleRestorePreview()}
+                disabled={!hasConfiguredRepository || isPreviewingRestore || isRestoring}
+                className="inline-flex items-center justify-center rounded-full border border-sky-500/30 bg-white px-5 py-2.5 text-sm font-medium text-sky-700 transition hover:border-sky-500 hover:bg-sky-500/5 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-black/10 dark:text-sky-300 dark:hover:bg-sky-500/10"
+              >
+                {isPreviewingRestore ? "正在预览..." : "查看恢复预览"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRestore()}
+                disabled={!canExecuteRestore}
+                className="inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRestoring ? "正在恢复..." : "执行恢复"}
+              </button>
+            </div>
+            <label className="flex items-start gap-3 rounded-2xl bg-white px-4 py-3 text-sm text-zinc-700 dark:bg-white/5 dark:text-zinc-200">
+              <input
+                type="checkbox"
+                checked={confirmRestore}
+                onChange={(event) => setConfirmRestore(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span>
+                我确认把{selectedHistoryEntry ? `历史快照 ${formatCommit(selectedHistoryEntry.commit)}` : "该分支中的最新快照"}里的 `.openclaw` 恢复到上面的目标目录。
+              </span>
+            </label>
+            {shouldConfirmOverwrite ? (
+              <label className="flex items-start gap-3 rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+                <input
+                  type="checkbox"
+                  checked={replaceExistingRestoreTarget}
+                  onChange={(event) => setReplaceExistingRestoreTarget(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                />
+                <span>目标目录里如果已经有 `.openclaw`，允许先备份旧目录再覆盖恢复。</span>
+              </label>
+            ) : null}
+            {restoreHint ? (
+              <div className="rounded-2xl border border-zinc-200/80 bg-white px-4 py-3 text-sm text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300">
+                {restoreHint}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {restoreError ? (
+          <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+            <p className="font-medium">恢复失败</p>
+            <p className="mt-1 opacity-90">{restoreError.message}</p>
+            {restoreError.details ? <ResultDetails details={restoreError.details} /> : null}
+          </div>
+        ) : null}
+
+        {restorePreview ? (
+          <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+            <div className="rounded-[24px] bg-white/80 p-4 dark:bg-black/10">
+              <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">当前恢复预览</h3>
+              <dl className="mt-3 grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+                <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">分支</dt>
+                  <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{restorePreview.selectedBranch?.branch ?? iceBox.branch}</dd>
+                </div>
+                <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">目标快照</dt>
+                  <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
+                    {restorePreview.selectedBranch?.lastBackupAt
+                      ? formatDateTime(restorePreview.selectedBranch.lastBackupAt)
+                      : "当前还没有可恢复快照"}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">目标提交</dt>
+                  <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{formatCommit(restorePreview.selectedBranch?.lastCommit)}</dd>
+                </div>
+                <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">恢复路径</dt>
+                  <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
+                    {restorePreview.restoredPath ?? "等待填写目标目录后生成"}
+                  </dd>
+                </div>
+                {restorePreview.overwriteBackupPath ? (
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                    <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">覆盖前备份</dt>
+                    <dd className="mt-2 break-all font-mono text-xs text-amber-900 dark:text-amber-100">{restorePreview.overwriteBackupPath}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+
+            <div className="rounded-[24px] bg-white/80 p-4 dark:bg-black/10">
+              <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">仓库里可恢复的分支</h3>
+              <div className="mt-3 grid gap-3">
+                {restorePreview.availableBranches?.length ? (
+                  restorePreview.availableBranches.slice(0, 6).map((branchPreview) => (
+                    <div key={branchPreview.branch} className="rounded-2xl bg-sky-500/5 px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="font-mono text-xs text-zinc-900 dark:text-zinc-100">{branchPreview.branch}</p>
+                        <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+                          {branchPreview.exists ? "可恢复" : "无快照"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {branchPreview.lastBackupAt ? formatDateTime(branchPreview.lastBackupAt) : "暂无最近备份时间"}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{branchPreview.summary ?? "暂无提交说明"}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-zinc-300 px-4 py-5 text-sm text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+                    当前仓库里还没扫到任何 `ice-box/...` 可恢复分支。
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {restoreResult?.ok ? (
+          <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
+            <p className="font-medium">恢复完成</p>
+            <p className="mt-1 opacity-90">{restoreResult.message}</p>
+            <div className="mt-3 grid gap-2 text-xs">
+              <p>恢复分支：<span className="font-mono">{restoreResult.branch}</span></p>
+              <p>恢复路径：<span className="font-mono">{restoreResult.restoredPath}</span></p>
+              {restoreResult.previousPathBackup ? <p>旧目录备份：<span className="font-mono">{restoreResult.previousPathBackup}</span></p> : null}
+              {restoreResult.commit ? <p>快照提交：<span className="font-mono">{formatCommit(restoreResult.commit)}</span></p> : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 rounded-[24px] border border-rose-500/20 bg-rose-500/5 p-5 shadow-sm shadow-rose-500/5">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-rose-700 dark:text-rose-300">
+              Danger Zone
+            </span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">删除后会从本地冰盒列表中移除</span>
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">删除这个冰盒</h2>
+          <p className="max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            适合清理废弃机器或误建冰盒。当前实现会更新本地 store 和持久化缓存，后续接入真实仓库后可继续补上 Git 分支清理。
+          </p>
+        </div>
+
+        <div className="grid gap-3 rounded-[24px] bg-white/80 p-4 text-sm text-zinc-600 dark:bg-black/10 dark:text-zinc-300 sm:grid-cols-2">
+          <div className="rounded-2xl bg-rose-500/5 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">机器 ID</p>
+            <p className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.machineId}</p>
+          </div>
+          <div className="rounded-2xl bg-rose-500/5 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</p>
+            <p className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.branch}</p>
+          </div>
+        </div>
+
+        {deleteError ? (
+          <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+            <p className="font-medium">删除失败</p>
+            <p className="mt-1 opacity-90">{deleteError}</p>
+          </div>
+        ) : null}
+
+        {confirmDelete ? (
+          <div className="flex flex-col gap-4 rounded-[24px] border border-rose-500/20 bg-rose-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1 text-sm text-rose-700 dark:text-rose-300">
+              <p className="font-medium">确定要删除「{iceBox.name}」吗？</p>
+              <p>删除后会立刻从当前设备的冰盒列表消失。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setDeleteError(null);
+                }}
+                disabled={isDeleting}
+                className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-300 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-zinc-200 dark:hover:border-white/20"
+              >
+                先等等
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={isDeleting}
+                className="inline-flex items-center justify-center rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDeleting ? "正在删除..." : "确认删除"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-dashed border-rose-500/20 p-4">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">不再需要这个冰盒了？可以在这里把它从冷冻室清出去。</p>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex items-center justify-center rounded-full border border-rose-500/30 bg-white px-5 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-500 hover:bg-rose-500/5 dark:bg-black/10 dark:text-rose-300 dark:hover:bg-rose-500/10"
+            >
+              删除冰盒
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
