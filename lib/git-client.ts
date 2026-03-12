@@ -392,9 +392,15 @@ async function writeTextFile(fsPromises: BrowserFsPromises, filePath: string, co
   await fsPromises.writeFile(filePath, content, "utf8");
 }
 
-async function stageSeedFiles(fs: BrowserFs, dir: string, initializedAt: string) {
+async function stageSeedFiles(
+  fs: BrowserFs,
+  dir: string,
+  initializedAt: string,
+  options?: { overwriteExisting?: boolean },
+) {
   const files = buildInitialFiles(initializedAt);
   const results: NonNullable<GitConfigInitResult["files"]> = [];
+  const overwriteExisting = options?.overwriteExisting ?? false;
 
   for (const file of files) {
     const fullPath = `${dir}/${file.path}`;
@@ -404,6 +410,11 @@ async function stageSeedFiles(fs: BrowserFs, dir: string, initializedAt: string)
       await fs.promises.stat(fullPath);
     } catch {
       exists = false;
+    }
+
+    if (exists && !overwriteExisting) {
+      results.push({ path: file.path, status: "unchanged" });
+      continue;
     }
 
     await writeTextFile(fs.promises, fullPath, file.content);
@@ -645,7 +656,9 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
       await clearTrackedFiles(fs, dir);
     }
 
-    const files = await stageSeedFiles(fs, dir, initializedAt);
+    const files = await stageSeedFiles(fs, dir, initializedAt, {
+      overwriteExisting: !branchExists,
+    });
     const statusMatrix = await git.statusMatrix({ fs, dir });
     const hasNoChanges = statusMatrix.every(([, headStatus, workdirStatus, stageStatus]) => {
       const normalizedWorktree = workdirStatus === 0 ? headStatus : workdirStatus;
@@ -656,7 +669,7 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
       return {
         ok: true,
         initializedAt,
-        message: "`fridge-config` 分支已存在，初始化文件也已经齐全。",
+        message: "`fridge-config` 分支已存在，已保留现有配置。",
         details: files.map((file) => `${file.path}：已保留`).join("\n"),
         branch: fridgeConfigBranch,
         root: config.repository,
@@ -686,8 +699,10 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
     return {
       ok: true,
       initializedAt,
-      message: branchExists ? "已载入并刷新 fridge-config 分支。" : "已在浏览器里初始化 fridge-config 分支并推送到远程仓库。",
-      details: files.map((file) => `${file.path}：${file.status === "created" ? "已创建" : "已覆盖"}`).join("\n"),
+      message: branchExists ? "已载入 fridge-config 分支，并保留已有配置。" : "已在浏览器里初始化 fridge-config 分支并推送到远程仓库。",
+      details: files
+        .map((file) => `${file.path}：${file.status === "created" ? "已创建" : file.status === "overwritten" ? "已覆盖" : "已保留"}`)
+        .join("\n"),
       branch: fridgeConfigBranch,
       root: config.repository,
       commit,
