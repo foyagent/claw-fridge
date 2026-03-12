@@ -534,7 +534,13 @@ export function GitConfigPanel() {
               {isTesting ? "测试中..." : "测试连接"}
             </button>
             <button type="button" onClick={handleInitialize} disabled={!canInitialize} className="fridge-button-secondary">
-              {isInitializing ? "初始化中..." : `初始化 ${fridgeConfigBranch}`}
+              {isInitializing
+                ? lastGitTestResult?.hasFridgeConfig
+                  ? "载入中..."
+                  : "初始化中..."
+                : lastGitTestResult?.hasFridgeConfig
+                  ? `载入 ${fridgeConfigBranch}`
+                  : `初始化 ${fridgeConfigBranch}`}
             </button>
             <button
               type="button"
@@ -554,10 +560,21 @@ export function GitConfigPanel() {
           ) : null}
 
           <div className="fridge-panel-muted text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            <p className="font-medium text-zinc-900 dark:text-zinc-100">推荐顺序</p>
-            <p>1. 先保存当前仓库配置。</p>
-            <p>2. 再测试连接，确认认证方式没填错。</p>
-            <p>3. 最后初始化 {fridgeConfigBranch}，给冰盒创建和全局配置留出专属分支。</p>
+            <p className="font-medium text-zinc-900 dark:text-zinc-100">
+              {lastGitTestResult?.hasFridgeConfig ? "配置分支已存在" : "推荐顺序"}
+            </p>
+            {lastGitTestResult?.hasFridgeConfig ? (
+              <>
+                <p>仓库中已存在 {fridgeConfigBranch} 分支。</p>
+                <p>点击&ldquo;载入 {fridgeConfigBranch}&rdquo;将配置同步到本地。</p>
+              </>
+            ) : (
+              <>
+                <p>1. 先保存当前仓库配置。</p>
+                <p>2. 再测试连接，确认认证方式没填错。</p>
+                <p>3. 最后初始化 {fridgeConfigBranch}，给冰盒创建和全局配置留出专属分支。</p>
+              </>
+            )}
           </div>
         </div>
 
@@ -604,6 +621,11 @@ export function GitConfigPanel() {
               </div>
               <p className="mt-2">{lastGitTestResult.message}</p>
               {lastGitTestResult.defaultBranch ? <p className="mt-2">默认分支：{lastGitTestResult.defaultBranch}</p> : null}
+              {lastGitTestResult.hasFridgeConfig !== undefined ? (
+                <p className="mt-2">
+                  {fridgeConfigBranch} 分支：{lastGitTestResult.hasFridgeConfig ? "已存在" : "不存在"}
+                </p>
+              ) : null}
               {lastGitTestResult.details ? <ResultDetails details={lastGitTestResult.details} /> : null}
             </div>
           ) : null}

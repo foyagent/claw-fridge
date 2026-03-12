@@ -59,6 +59,7 @@ export interface GitConfigTestResult extends OperationResultFields {
   checkedAt: string;
   target?: GitTestTarget;
   defaultBranch?: string;
+  hasFridgeConfig?: boolean;
 }
 
 export interface FridgeConfigFile {

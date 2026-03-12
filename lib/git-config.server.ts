@@ -119,6 +119,15 @@ async function testLocalRepository(config: GitRepositoryConfig): Promise<GitConf
     const currentBranch = await git.currentBranch({ fs, dir: root, fullname: false });
     const head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
 
+    // 检查 fridge-config 分支是否存在
+    let hasFridgeConfig = false;
+    try {
+      const branches = await git.listBranches({ fs, dir: root });
+      hasFridgeConfig = branches.includes(fridgeConfigBranch);
+    } catch {
+      // 忽略错误
+    }
+
     return {
       ok: true,
       checkedAt: new Date().toISOString(),
@@ -126,6 +135,7 @@ async function testLocalRepository(config: GitRepositoryConfig): Promise<GitConf
       message: "本地 Git 仓库可用。",
       details: `仓库根目录：${root}\n当前分支：${currentBranch ?? "detached HEAD"}\nHEAD：${head}`,
       defaultBranch: currentBranch ?? undefined,
+      hasFridgeConfig,
     };
   } catch (error) {
     return buildGitConfigErrorResult("未识别到有效的本地 Git 仓库。", formatErrorMessage(error));
@@ -164,6 +174,21 @@ async function testHttpsRepository(config: GitRepositoryConfig): Promise<GitConf
     });
     const defaultBranch = refs.find((ref) => ref.ref === "HEAD")?.target?.replace("refs/heads/", "");
 
+    // 检查 fridge-config 分支是否存在
+    let hasFridgeConfig = false;
+    try {
+      const branchRefs = await git.listServerRefs({
+        http,
+        url: config.repository,
+        onAuth,
+        protocolVersion: 2,
+        prefix: `refs/heads/${fridgeConfigBranch}`,
+      });
+      hasFridgeConfig = branchRefs.some((ref) => ref.ref === `refs/heads/${fridgeConfigBranch}`);
+    } catch {
+      // 忽略错误
+    }
+
     return {
       ok: true,
       checkedAt: new Date().toISOString(),
@@ -171,6 +196,7 @@ async function testHttpsRepository(config: GitRepositoryConfig): Promise<GitConf
       message: "HTTPS 远程仓库连接成功。",
       details: `地址：${config.repository}${defaultBranch ? `\n默认分支：${defaultBranch}` : ""}`,
       defaultBranch,
+      hasFridgeConfig,
     };
   } catch (error) {
     return buildGitConfigErrorResult(
@@ -305,6 +331,23 @@ async function testSshRepository(config: GitRepositoryConfig): Promise<GitConfig
     });
     const defaultBranch = detectDefaultBranch(result.stdout);
 
+    // 检查 fridge-config 分支是否存在
+    let hasFridgeConfig = false;
+    try {
+      const branchResult = await execFileAsync(
+        "git",
+        ["ls-remote", "--exit-code", "--heads", repository, fridgeConfigBranch],
+        {
+          env: sshEnvironment.env,
+          timeout: 10000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+      hasFridgeConfig = branchResult.stdout.trim().length > 0;
+    } catch {
+      // 分支不存在时会返回非零退出码，忽略
+    }
+
     return {
       ok: true,
       checkedAt: new Date().toISOString(),
@@ -312,6 +355,7 @@ async function testSshRepository(config: GitRepositoryConfig): Promise<GitConfig
       message: "SSH 远程仓库连接成功。",
       details: `地址：${repository}${defaultBranch ? `\n默认分支：${defaultBranch}` : ""}`,
       defaultBranch,
+      hasFridgeConfig,
     };
   } catch (error) {
     return buildGitConfigErrorResult(
