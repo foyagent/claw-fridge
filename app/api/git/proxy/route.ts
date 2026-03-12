@@ -21,10 +21,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing url" }, { status: 400 });
     }
 
+    // 过滤并转发必要的 headers（包括 Authorization）
+    const forwardHeaders: Record<string, string> = {};
+    if (headers && typeof headers === "object") {
+      // 只转发必要的 headers，避免转发所有 headers 导致问题
+      const allowedHeaders = ["authorization", "content-type", "accept", "user-agent"];
+      for (const [key, value] of Object.entries(headers)) {
+        if (allowedHeaders.includes(key.toLowerCase()) && typeof value === "string") {
+          forwardHeaders[key] = value;
+        }
+      }
+    }
+
     // 转发请求到目标 Git 服务器
     const fetchOptions: RequestInit = {
       method: method || "GET",
-      headers: headers || {},
+      headers: forwardHeaders,
     };
 
     if (requestBody) {
@@ -38,7 +50,10 @@ export async function POST(request: NextRequest) {
     
     // 复制必要的响应头
     response.headers.forEach((value, key) => {
-      responseHeaders.set(key, value);
+      // 避免复制可能导致问题的 headers
+      if (!["content-encoding", "transfer-encoding", "connection"].includes(key.toLowerCase())) {
+        responseHeaders.set(key, value);
+      }
     });
 
     const responseBody = await response.arrayBuffer();
