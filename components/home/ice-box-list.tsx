@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMounted } from "@/hooks/use-mounted";
-import { formatLastBackupTime, getIceBoxStatusMeta } from "@/lib/ice-boxes";
+import { formatLastBackupTime, getIceBoxStatusMeta, getIceBoxSyncStatusMeta } from "@/lib/ice-boxes";
+import { useAppStore } from "@/store/app-store";
 import { useIceBoxStore } from "@/store/ice-box-store";
-import type { IceBoxStatus } from "@/types";
+import type { IceBoxStatus, SyncPendingIceBoxesResult } from "@/types";
 
 function statusClassName(status: IceBoxStatus) {
   if (status === "healthy") {
@@ -17,6 +18,31 @@ function statusClassName(status: IceBoxStatus) {
   }
 
   return "fridge-chip fridge-chip--warning";
+}
+
+function syncStatusClassName(syncStatus: ReturnType<typeof getIceBoxSyncStatusMeta>["tone"]) {
+  if (syncStatus === "success") {
+    return "fridge-chip fridge-chip--success";
+  }
+
+  if (syncStatus === "error") {
+    return "fridge-chip fridge-chip--warning";
+  }
+
+  if (syncStatus === "info") {
+    return "fridge-chip fridge-chip--ocean";
+  }
+
+  return "fridge-chip";
+}
+
+function ResultDetails({ details }: { details: string }) {
+  return (
+    <details className="mt-3 rounded-xl bg-black/5 p-3 text-xs leading-5 text-current dark:bg-black/20">
+      <summary className="cursor-pointer font-medium">查看细节</summary>
+      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{details}</pre>
+    </details>
+  );
 }
 
 function IceBoxListSkeleton() {
@@ -42,23 +68,35 @@ function IceBoxListSkeleton() {
 
 export function IceBoxList() {
   const mounted = useMounted();
+  const gitConfig = useAppStore((state) => state.gitConfig);
   const iceBoxes = useIceBoxStore((state) => state.iceBoxes);
-  const hasHydrated = useIceBoxStore((state) => state.hasHydrated);
   const hasLoaded = useIceBoxStore((state) => state.hasLoaded);
   const isLoading = useIceBoxStore((state) => state.isLoading);
   const error = useIceBoxStore((state) => state.error);
   const loadIceBoxes = useIceBoxStore((state) => state.loadIceBoxes);
+  const syncPendingIceBoxes = useIceBoxStore((state) => state.syncPendingIceBoxes);
   const clearError = useIceBoxStore((state) => state.clearError);
+  const [isSyncingPending, setIsSyncingPending] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<SyncPendingIceBoxesResult | null>(null);
 
   useEffect(() => {
-    if (!mounted || !hasHydrated || hasLoaded) {
+    if (!mounted || hasLoaded) {
       return;
     }
 
-    void loadIceBoxes();
-  }, [hasHydrated, hasLoaded, loadIceBoxes, mounted]);
+    void loadIceBoxes(gitConfig);
+  }, [hasLoaded, loadIceBoxes, mounted, gitConfig]);
 
-  if (!mounted || !hasHydrated || (isLoading && !hasLoaded)) {
+  const pendingIceBoxes = useMemo(() => iceBoxes.filter((item) => item.syncStatus !== "synced"), [iceBoxes]);
+
+  async function handleSyncPending() {
+    setIsSyncingPending(true);
+    const result = await syncPendingIceBoxes(gitConfig);
+    setSyncNotice(result);
+    setIsSyncingPending(false);
+  }
+
+  if (!mounted || (isLoading && !hasLoaded)) {
     return <IceBoxListSkeleton />;
   }
 
@@ -70,18 +108,36 @@ export function IceBoxList() {
           <div className="space-y-2">
             <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">冰盒列表</h2>
             <p className="max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-300 sm:text-base">
-              所有冰盒会在这里汇总展示：运行状态、最近备份、分支信息，以及下一步要进入的详情页入口。
+              所有冰盒会在这里汇总展示：运行状态、远端同步状态、最近备份、分支信息，以及下一步要进入的详情页入口。
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <span className="fridge-chip">共 {iceBoxes.length} 个冰盒</span>
+          {pendingIceBoxes.length > 0 ? <span className="fridge-chip fridge-chip--warning">待同步 {pendingIceBoxes.length} 个</span> : null}
+          {pendingIceBoxes.length > 0 ? (
+            <button type="button" onClick={() => void handleSyncPending()} className="fridge-button-secondary" disabled={isSyncingPending}>
+              {isSyncingPending ? "正在同步待同步冰盒..." : "同步全部待同步冰盒"}
+            </button>
+          ) : null}
           <Link href="/ice-boxes/new" className="fridge-button-primary">
             创建新冰盒
           </Link>
         </div>
       </div>
+
+      {syncNotice ? (
+        <div
+          className={`fridge-state ${syncNotice.ok ? "fridge-state--success" : "fridge-state--warning"} grid gap-2`}
+        >
+          <div>
+            <p className="font-medium">{syncNotice.message}</p>
+            <p className="mt-1 text-sm opacity-90">已成功同步 {syncNotice.syncedCount} 个冰盒。</p>
+          </div>
+          {syncNotice.details ? <ResultDetails details={syncNotice.details} /> : null}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="fridge-state fridge-state--error flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -93,7 +149,7 @@ export function IceBoxList() {
             type="button"
             onClick={() => {
               clearError();
-              void loadIceBoxes();
+              void loadIceBoxes(gitConfig);
             }}
             className="fridge-button-secondary"
           >
@@ -108,7 +164,7 @@ export function IceBoxList() {
           <div className="space-y-2">
             <h3 className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">冷冻室还是空的</h3>
             <p className="mx-auto max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-300 sm:text-base">
-              先创建第一个冰盒，把机器和备份分支接进来。创建完成后，这里会立即展示状态、时间线和详情入口。
+              先创建第一个冰盒，把机器和备份分支接进来。创建完成后，这里会立即展示本地状态、远端同步状态、时间线和详情入口。
             </p>
           </div>
           <div className="fridge-step-grid text-left">
@@ -145,6 +201,7 @@ export function IceBoxList() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {iceBoxes.map((iceBox) => {
             const statusMeta = getIceBoxStatusMeta(iceBox.status);
+            const syncMeta = getIceBoxSyncStatusMeta(iceBox.syncStatus);
 
             return (
               <Link
@@ -157,8 +214,18 @@ export function IceBoxList() {
                     <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{iceBox.name}</h3>
                     <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-300">{statusMeta.description}</p>
                   </div>
-                  <span className={statusClassName(iceBox.status)}>{statusMeta.label}</span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={statusClassName(iceBox.status)}>{statusMeta.label}</span>
+                    <span className={syncStatusClassName(syncMeta.tone)}>{syncMeta.shortLabel}</span>
+                  </div>
                 </div>
+
+                {iceBox.syncStatus !== "synced" ? (
+                  <div className="rounded-2xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
+                    <p className="font-medium">{syncMeta.label}</p>
+                    <p className="mt-1">{syncMeta.description}</p>
+                  </div>
+                ) : null}
 
                 <dl className="fridge-detail-list text-zinc-600 dark:text-zinc-300">
                   <div className="fridge-detail-item flex items-center justify-between gap-3">
@@ -166,6 +233,10 @@ export function IceBoxList() {
                     <dd className="text-right font-medium text-zinc-900 dark:text-zinc-100">
                       {formatLastBackupTime(iceBox.lastBackupAt)}
                     </dd>
+                  </div>
+                  <div className="fridge-detail-item flex items-center justify-between gap-3">
+                    <dt>远端同步</dt>
+                    <dd className="text-right font-medium text-zinc-900 dark:text-zinc-100">{syncMeta.label}</dd>
                   </div>
                   <div className="fridge-detail-item flex items-center justify-between gap-3">
                     <dt>机器 ID</dt>
@@ -178,7 +249,7 @@ export function IceBoxList() {
                 </dl>
 
                 <div className="flex items-center justify-between text-sm font-medium text-zinc-500 transition group-hover:text-sky-700 dark:text-zinc-400 dark:group-hover:text-sky-300">
-                  <span>查看详情</span>
+                  <span>{iceBox.syncStatus === "synced" ? "查看详情" : "查看详情并重试同步"}</span>
                   <span aria-hidden="true">→</span>
                 </div>
               </Link>

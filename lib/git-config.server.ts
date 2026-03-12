@@ -328,13 +328,14 @@ export async function runGitCommand(
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    timeout?: number;
   } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   try {
     const result = await execFileAsync("git", args, {
       cwd: options.cwd,
       env: options.env,
-      timeout: 30000,
+      timeout: options.timeout ?? 30000,
       maxBuffer: 1024 * 1024,
     });
 
