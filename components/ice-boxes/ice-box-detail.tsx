@@ -574,12 +574,6 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           >
             返回冰盒列表
           </Link>
-          <Link
-            href="/ice-boxes/new"
-            className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            创建新冰盒
-          </Link>
         </div>
       </section>
     );
@@ -688,9 +682,6 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               {isSyncingToRemote ? "正在同步到远端..." : "立即同步到远端"}
             </button>
           ) : null}
-          <Link href="/ice-boxes/new" className="fridge-button-primary">
-            创建新冰盒
-          </Link>
         </div>
       </div>
 

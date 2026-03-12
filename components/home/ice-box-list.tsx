@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { IceBoxDetail } from "@/components/ice-boxes/ice-box-detail";
+import { IceBoxCreateForm } from "@/components/home/ice-box-create-form";
 import { useMounted } from "@/hooks/use-mounted";
 import { formatLastBackupTime, getIceBoxStatusMeta, getIceBoxSyncStatusMeta } from "@/lib/ice-boxes";
 import { useAppStore } from "@/store/app-store";
@@ -68,6 +68,7 @@ export function IceBoxList() {
   const loadIceBoxes = useIceBoxStore((state) => state.loadIceBoxes);
   const clearError = useIceBoxStore((state) => state.clearError);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const hasCachedIceBoxes = iceBoxes.length > 0;
 
   useEffect(() => {
@@ -90,6 +91,14 @@ export function IceBoxList() {
     setExpandedId((currentId) => (currentId === id ? null : id));
   }
 
+  function handleCreateSuccess() {
+    setIsCreating(false);
+  }
+
+  function handleCreateCancel() {
+    setIsCreating(false);
+  }
+
   if (!mounted || (isLoading && !hasLoaded && !hasCachedIceBoxes)) {
     return <IceBoxListSkeleton />;
   }
@@ -98,9 +107,35 @@ export function IceBoxList() {
     <section className="fridge-panel grid gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">冰盒</h2>
-        <Link href="/ice-boxes/new" className="fridge-button-primary">
-          新建冰盒
-        </Link>
+        <button
+          type="button"
+          onClick={() => setIsCreating((current) => !current)}
+          className="fridge-button-primary"
+        >
+          {isCreating ? "收起创建表单" : "新建冰盒"}
+        </button>
+      </div>
+
+      <div
+        className={[
+          "grid overflow-hidden transition-all duration-300 ease-out",
+          isCreating ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        ].join(" ")}
+        aria-hidden={!isCreating}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div
+            className={[
+              "transition-all duration-300 ease-out",
+              isCreating ? "translate-y-0" : "-translate-y-2",
+            ].join(" ")}
+          >
+            <IceBoxCreateForm
+              onSuccess={handleCreateSuccess}
+              onCancel={handleCreateCancel}
+            />
+          </div>
+        </div>
       </div>
 
       {error ? (
@@ -122,11 +157,19 @@ export function IceBoxList() {
         </div>
       ) : null}
 
-      {iceBoxes.length === 0 ? (
+      {iceBoxes.length === 0 && !isCreating ? (
         <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 bg-white/55 p-8 dark:border-white/10 dark:bg-white/5">
-          <Link href="/ice-boxes/new" className="fridge-button-primary w-fit">
+          <div className="space-y-2">
+            <p className="text-lg font-medium text-zinc-900 dark:text-zinc-100">还没有冰盒</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">点击上方"新建冰盒"创建第一个备份配置。</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsCreating(true)}
+            className="fridge-button-primary w-fit"
+          >
             新建冰盒
-          </Link>
+          </button>
         </div>
       ) : (
         <div className="grid gap-4">
