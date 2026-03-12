@@ -231,10 +231,12 @@ async function withRepositoryClone<T>(
 
     await runGitCommand(["clone", "--no-checkout", prepared.repository, workingDirectory], {
       env: prepared.env,
+      timeout: 120000,
     });
-    await runGitCommand(["fetch", "--prune", "origin"], {
+    await runGitCommand(["fetch", "--prune", "--all"], {
       cwd: workingDirectory,
       env: prepared.env,
+      timeout: 60000,
     });
 
     return await operation({
