@@ -24,10 +24,20 @@ export async function POST(request: NextRequest) {
     // 过滤并转发必要的 headers（包括 Authorization）
     const forwardHeaders: Record<string, string> = {};
     if (headers && typeof headers === "object") {
-      // 只转发必要的 headers，避免转发所有 headers 导致问题
-      const allowedHeaders = ["authorization", "content-type", "accept", "user-agent"];
+      // 转发 Git 相关的 headers
       for (const [key, value] of Object.entries(headers)) {
-        if (allowedHeaders.includes(key.toLowerCase()) && typeof value === "string") {
+        const lowerKey = key.toLowerCase();
+        // 只转发必要的 headers
+        if (
+          [
+            "authorization",
+            "content-type",
+            "accept",
+            "user-agent",
+            "git-protocol",
+          ].includes(lowerKey) &&
+          typeof value === "string"
+        ) {
           forwardHeaders[key] = value;
         }
       }
