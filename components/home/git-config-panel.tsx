@@ -349,8 +349,7 @@ export function GitConfigPanel() {
           <span className="fridge-kicker">Git Config</span>
           <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">配置存储仓库</h2>
           <p className="max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            先把 OpenClaw 配置仓库接上，再初始化 <code>{fridgeConfigBranch}</code> 分支，后面的 Ice Box
-            创建、同步和备份流程才有地方落地。
+            保存、测试，然后初始化 <code>{fridgeConfigBranch}</code>。
           </p>
         </div>
 
@@ -384,10 +383,9 @@ export function GitConfigPanel() {
           </label>
 
           <div className="fridge-panel-muted text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            <p className="font-medium text-zinc-900 dark:text-zinc-100">首次配置提示</p>
-            <p>支持 GitHub / GitLab / Gitea / 通用自托管 Git 仓库。</p>
-            <p>HTTPS 示例：{platformExamples.https}</p>
-            <p>SSH 示例：{platformExamples.ssh}</p>
+            <p className="font-medium text-zinc-900 dark:text-zinc-100">示例</p>
+            <p>HTTPS：{platformExamples.https}</p>
+            <p>SSH：{platformExamples.ssh}</p>
           </div>
 
           <label className="grid gap-2">
@@ -594,18 +592,16 @@ export function GitConfigPanel() {
 
           <div className="fridge-panel-muted text-sm leading-6 text-zinc-600 dark:text-zinc-300">
             <p className="font-medium text-zinc-900 dark:text-zinc-100">
-              {lastGitTestResult?.hasFridgeConfig ? "配置分支已存在" : "推荐顺序"}
+              {lastGitTestResult?.hasFridgeConfig ? "配置分支已存在" : "操作顺序"}
             </p>
             {lastGitTestResult?.hasFridgeConfig ? (
               <>
                 <p>仓库中已存在 {fridgeConfigBranch} 分支。</p>
-                <p>点击&ldquo;载入 {fridgeConfigBranch}&rdquo;将配置同步到本地。</p>
+                <p>点击&ldquo;载入 {fridgeConfigBranch}&rdquo;即可同步到本地。</p>
               </>
             ) : (
               <>
-                <p>1. 先保存当前仓库配置。</p>
-                <p>2. 再测试连接，确认认证方式没填错。</p>
-                <p>3. 最后初始化 {fridgeConfigBranch}，给冰盒创建和全局配置留出专属分支。</p>
+                <p>保存配置 → 测试连接 → 初始化 {fridgeConfigBranch}</p>
               </>
             )}
           </div>
@@ -624,20 +620,10 @@ export function GitConfigPanel() {
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">平台支持</h3>
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">提示</h3>
             <div className="space-y-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              <p>已覆盖 GitHub / GitLab / Gitea / 通用 HTTPS、SSH 仓库。</p>
-              <p>GitLab PAT 默认推荐用户名是 `oauth2`；Deploy Token 则改用平台生成的专用用户名。</p>
-              <p>GitHub、GitLab、Gitea 的 SSH 地址通常都可直接使用 `git@host:owner/repo.git`。</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">接入建议</h3>
-            <div className="space-y-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              <p>浏览器模式不会访问本地文件系统；如需初始化，请改用远程 HTTPS 仓库。</p>
-              <p>远程仓库建议先“测试连接”，再初始化专用配置分支。</p>
-              <p>初始化完成后，后续 Ice Box 列表和全局配置就能写入这个分支。</p>
+              <p>支持 GitHub / GitLab / Gitea / 通用 HTTPS 仓库。</p>
+              <p>浏览器模式初始化更适合远程 HTTPS 仓库。</p>
             </div>
           </div>
 

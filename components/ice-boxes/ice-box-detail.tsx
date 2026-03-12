@@ -111,7 +111,7 @@ function ResultDetails({ details }: { details: string }) {
   );
 }
 
-export function IceBoxDetail({ id }: { id: string }) {
+export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: boolean }) {
   const mounted = useMounted();
   const router = useRouter();
   const gitConfig = useAppStore((state) => state.gitConfig);
@@ -288,7 +288,7 @@ export function IceBoxDetail({ id }: { id: string }) {
     try {
       await deleteIceBox(id, gitConfig);
       setHasDeleted(true);
-      router.replace("/");
+      router.replace(embedded ? "/" : "/");
     } catch (actionError) {
       setDeleteError(actionError instanceof Error ? actionError.message : "删除冰盒失败，请稍后重试。");
       setIsDeleting(false);
@@ -652,12 +652,14 @@ export function IceBoxDetail({ id }: { id: string }) {
 
   return (
     <section className="grid gap-6">
-      <div className="fridge-hero">
+      <div className={embedded ? "grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/60 p-5 dark:border-white/10 dark:bg-zinc-950/30" : "fridge-hero"}>
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <Link href="/" className="fridge-button-ghost px-0 py-0">
-              ← 返回冰盒列表
-            </Link>
+            {!embedded ? (
+              <Link href="/" className="fridge-button-ghost px-0 py-0">
+                ← 返回冰盒列表
+              </Link>
+            ) : null}
             <span className="fridge-chip fridge-chip--ocean">{backupModeMeta.label}</span>
             <span className={`fridge-chip ${iceBox.backupMode === "upload-token" ? "fridge-chip--coral" : "fridge-chip--success"}`}>
               {iceBox.backupMode === "upload-token" ? "上传模式" : "Git 直推"}
@@ -668,7 +670,7 @@ export function IceBoxDetail({ id }: { id: string }) {
           </div>
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{iceBox.name}</h1>
+              <h1 className={embedded ? "text-2xl font-semibold text-zinc-950 dark:text-zinc-50" : "text-3xl font-semibold text-zinc-950 dark:text-zinc-50"}>{iceBox.name}</h1>
               <span className={`rounded-full border px-3 py-1 text-sm font-medium ${statusClassName(iceBox.status)}`}>
                 {statusMeta.label}
               </span>
@@ -680,7 +682,7 @@ export function IceBoxDetail({ id }: { id: string }) {
         </div>
 
         <div className="fridge-panel-tint flex flex-wrap items-center gap-3 text-sm leading-6 text-zinc-700 dark:text-zinc-200">
-          <p>先看状态与连接信息，再去备份历史挑版本，最后在恢复面板里执行预览与恢复。</p>
+          <p>{embedded ? "配置、历史、恢复和 Skill 都在这里。" : "先看状态与连接信息，再去备份历史挑版本，最后在恢复面板里执行预览与恢复。"}</p>
           {iceBox.syncStatus !== "synced" ? (
             <button type="button" onClick={() => void handleSyncToRemote()} className="fridge-button-secondary" disabled={isSyncingToRemote}>
               {isSyncingToRemote ? "正在同步到远端..." : "立即同步到远端"}
