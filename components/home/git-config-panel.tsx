@@ -5,10 +5,7 @@ import { useMounted } from "@/hooks/use-mounted";
 import {
   detectRepositoryFlavor,
   detectRepositoryKind,
-  detectRepositoryPlatform,
   getDefaultGitUsername,
-  getGitPlatformAuthHelp,
-  getGitPlatformLabel,
   getGitRepositoryExamples,
   getGitTokenPlaceholder,
   getGitUsernamePlaceholder,
@@ -94,17 +91,6 @@ function formatDateTime(value: string | null | undefined) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 
-function formatAuthMethodLabel(method: GitAuthMethod) {
-  switch (method) {
-    case "https-token":
-      return "HTTPS Token";
-    case "ssh-key":
-      return "SSH Key";
-    default:
-      return "无需认证";
-  }
-}
-
 function formatFileStatus(result: GitConfigInitResult) {
   if (!result.files?.length) {
     return null;
@@ -135,7 +121,6 @@ function ResultDetails({ details, label = "查看细节" }: { details: string; l
 
 export function GitConfigPanel() {
   const mounted = useMounted();
-  // const hasHydrated = useAppStore((state) => state.hasHydrated);
   const persistedConfig = useAppStore((state) => state.gitConfig);
   const lastGitTestResult = useAppStore((state) => state.lastGitTestResult);
   const lastGitInitResult = useAppStore((state) => state.lastGitInitResult);
@@ -168,25 +153,9 @@ export function GitConfigPanel() {
     return detectRepositoryFlavor(draftConfig.repository, repositoryKind);
   }, [draftConfig.repository, repositoryKind]);
 
-  const repositoryPlatform = useMemo(() => {
-    return detectRepositoryPlatform(draftConfig.repository);
-  }, [draftConfig.repository]);
-
-  const platformLabel = useMemo(() => {
-    return getGitPlatformLabel(repositoryPlatform);
-  }, [repositoryPlatform]);
-
   const platformExamples = useMemo(() => {
-    return getGitRepositoryExamples(repositoryPlatform === "local" ? "generic" : repositoryPlatform);
-  }, [repositoryPlatform]);
-
-  const platformAuthHelp = useMemo(() => {
-    if (repositoryKind !== "remote" || draftConfig.auth.method === "none") {
-      return [];
-    }
-
-    return getGitPlatformAuthHelp(draftConfig.repository, draftConfig.auth.method);
-  }, [draftConfig.auth.method, draftConfig.repository, repositoryKind]);
+    return getGitRepositoryExamples("generic");
+  }, []);
 
   const effectiveConfig = useMemo<GitRepositoryConfig>(() => {
     if (repositoryKind === "local") {
@@ -215,38 +184,6 @@ export function GitConfigPanel() {
   const canInitialize = useMemo(() => {
     return Boolean(effectiveConfig.repository.trim()) && !isDirty && !isTesting && !isInitializing;
   }, [effectiveConfig.repository, isDirty, isInitializing, isTesting]);
-
-  const actionHint = useMemo(() => {
-    if (!effectiveConfig.repository.trim()) {
-      return {
-        tone: "warning",
-        message: "先填写 Git 仓库路径或远程地址，再继续测试或初始化。",
-      };
-    }
-
-    if (repositoryKind === "remote" && effectiveConfig.auth.method === "https-token" && !effectiveConfig.auth.token.trim()) {
-      return {
-        tone: "warning",
-        message: "当前是 HTTPS 仓库，建议先补上访问 Token，再测试连接。",
-      };
-    }
-
-    if (repositoryKind === "remote" && repositoryFlavor === "ssh") {
-      return {
-        tone: "warning",
-        message: "浏览器直连模式暂不支持 SSH，请把仓库地址改成 HTTPS 并使用 Token。",
-      };
-    }
-
-    if (isDirty) {
-      return {
-        tone: "info",
-        message: "草稿和已保存配置不一致；初始化会自动保存当前草稿，测试连接则直接使用当前草稿。",
-      };
-    }
-
-    return null;
-  }, [effectiveConfig, isDirty, repositoryFlavor, repositoryKind]);
 
   const clearTransientResults = () => {
     clearGitTestResult();
@@ -281,7 +218,7 @@ export function GitConfigPanel() {
     if (effectiveConfig.auth.method === "https-token" && effectiveConfig.auth.token.trim()) {
       persistGitCredentials(effectiveConfig);
     }
-    setSaveNotice("仓库配置已保存到本地浏览器。建议先测试连接，再初始化 fridge-config。");
+    setSaveNotice("已保存");
   };
 
   const handleTest = async () => {
@@ -327,13 +264,13 @@ export function GitConfigPanel() {
           ? { ...effectiveConfig.auth, token: "" }
           : effectiveConfig.auth,
     });
-    setSaveNotice("已清除本地保存的 Git Token。");
+    setSaveNotice("已清除本地凭证");
   };
 
   if (!mounted) {
     return (
       <section className="fridge-panel">
-        <div className="h-6 w-40 animate-pulse rounded-full bg-zinc-200/80 dark:bg-white/10" />
+        <div className="h-6 w-32 animate-pulse rounded-full bg-zinc-200/80 dark:bg-white/10" />
         <div className="mt-4 grid gap-3">
           <div className="h-10 animate-pulse rounded-2xl bg-zinc-100 dark:bg-white/5" />
           <div className="h-28 animate-pulse rounded-2xl bg-zinc-100 dark:bg-white/5" />
@@ -344,336 +281,156 @@ export function GitConfigPanel() {
 
   return (
     <section className="fridge-panel grid gap-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <span className="fridge-kicker">Git Config</span>
-          <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">配置存储仓库</h2>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            保存、测试，然后初始化 <code>{fridgeConfigBranch}</code>。
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2 text-xs font-medium">
-          <span className="fridge-chip">
-            {repositoryKind === "local" ? "本地仓库" : "远程仓库"}
-          </span>
-          <span className="fridge-chip fridge-chip--ocean">
-            {repositoryFlavor === "local"
-              ? "Path"
-              : repositoryFlavor === "https"
-                ? "HTTPS"
-                : repositoryFlavor === "ssh"
-                  ? "SSH"
-                  : "Remote"}
-          </span>
-          <span className="fridge-chip fridge-chip--coral">{platformLabel}</span>
-        </div>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">Git 配置</h2>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_0.9fr]">
-        <div className="grid gap-4">
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">仓库路径或远程地址</span>
-            <input
-              value={draftConfig.repository}
-              onChange={(event) => handleRepositoryChange(event.target.value)}
-              placeholder={`~/projects/openclaw 或 ${platformExamples.ssh}`}
-              className="fridge-input"
-            />
-          </label>
+      <div className="grid gap-4">
+        <label className="grid gap-2">
+          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">仓库地址</span>
+          <input
+            value={draftConfig.repository}
+            onChange={(event) => handleRepositoryChange(event.target.value)}
+            placeholder={`~/projects/openclaw 或 ${platformExamples.https}`}
+            className="fridge-input"
+          />
+        </label>
 
-          <div className="fridge-panel-muted text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            <p className="font-medium text-zinc-900 dark:text-zinc-100">示例</p>
-            <p>HTTPS：{platformExamples.https}</p>
-            <p>SSH：{platformExamples.ssh}</p>
-          </div>
+        <label className="grid gap-2">
+          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">认证方式</span>
+          <select
+            value={repositoryKind === "local" ? "none" : effectiveConfig.auth.method}
+            onChange={(event) => handleAuthMethodChange(event.target.value as GitAuthMethod)}
+            disabled={repositoryKind === "local"}
+            className="fridge-select"
+          >
+            <option value="none">无需认证</option>
+            <option value="https-token" disabled={repositoryFlavor === "ssh"}>
+              HTTPS Token
+            </option>
+            <option value="ssh-key" disabled>
+              SSH Key
+            </option>
+          </select>
+        </label>
 
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">认证方式</span>
-            <select
-              value={repositoryKind === "local" ? "none" : effectiveConfig.auth.method}
-              onChange={(event) => handleAuthMethodChange(event.target.value as GitAuthMethod)}
-              disabled={repositoryKind === "local"}
-              className="fridge-select"
-            >
-              <option value="none">无需认证 / 公共仓库</option>
-              <option value="https-token" disabled={repositoryFlavor === "ssh"}>
-                HTTPS Token
-              </option>
-              <option value="ssh-key" disabled>
-                SSH Key（浏览器模式暂不支持）
-              </option>
-            </select>
-          </label>
+        {repositoryKind === "remote" && effectiveConfig.auth.method === "https-token" ? (
+          <div className="grid gap-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-white/10 dark:bg-zinc-950/50">
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">用户名</span>
+              <input
+                value={effectiveConfig.auth.username}
+                onChange={(event) => {
+                  clearTransientResults();
+                  setDraftConfig((currentConfig) => ({
+                    ...currentConfig,
+                    auth:
+                      currentConfig.auth.method === "https-token"
+                        ? { ...currentConfig.auth, username: event.target.value }
+                        : currentConfig.auth,
+                  }));
+                }}
+                placeholder={getGitUsernamePlaceholder(draftConfig.repository, "https-token")}
+                className="fridge-input"
+              />
+            </label>
 
-          {repositoryKind === "remote" && effectiveConfig.auth.method === "https-token" ? (
-            <div className="grid gap-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-white/10 dark:bg-zinc-950/50">
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">用户名</span>
-                <input
-                  value={effectiveConfig.auth.username}
-                  onChange={(event) => {
-                    clearTransientResults();
-                    setDraftConfig((currentConfig) => ({
-                      ...currentConfig,
-                      auth:
-                        currentConfig.auth.method === "https-token"
-                          ? { ...currentConfig.auth, username: event.target.value }
-                          : currentConfig.auth,
-                    }));
-                  }}
-                  placeholder={getGitUsernamePlaceholder(draftConfig.repository, "https-token")}
-                  className="fridge-input"
-                />
-              </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">访问 Token</span>
+              <input
+                type="password"
+                value={effectiveConfig.auth.token}
+                onChange={(event) => {
+                  clearTransientResults();
+                  setDraftConfig((currentConfig) => ({
+                    ...currentConfig,
+                    auth:
+                      currentConfig.auth.method === "https-token"
+                        ? { ...currentConfig.auth, token: event.target.value }
+                        : currentConfig.auth,
+                  }));
+                }}
+                placeholder={getGitTokenPlaceholder(draftConfig.repository)}
+                className="fridge-input"
+              />
+            </label>
 
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">访问 Token</span>
-                <input
-                  type="password"
-                  value={effectiveConfig.auth.token}
-                  onChange={(event) => {
-                    clearTransientResults();
-                    setDraftConfig((currentConfig) => ({
-                      ...currentConfig,
-                      auth:
-                        currentConfig.auth.method === "https-token"
-                          ? { ...currentConfig.auth, token: event.target.value }
-                          : currentConfig.auth,
-                    }));
-                  }}
-                  placeholder={getGitTokenPlaceholder(draftConfig.repository)}
-                  className="fridge-input"
-                />
-              </label>
-
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={handleClearCredentials} className="fridge-button-ghost">
-                  清除本地凭证
-                </button>
-                <p className="text-xs leading-6 text-zinc-500 dark:text-zinc-400">
-                  Token 仅保存在当前浏览器的 localStorage，由你自己负责安全。
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-900 dark:text-amber-100">
-                <p>检测平台：{platformLabel}</p>
-                <p>默认用户名：{getDefaultGitUsername(draftConfig.repository, "https-token")}</p>
-                {platformAuthHelp.map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {repositoryKind === "remote" && effectiveConfig.auth.method === "ssh-key" ? (
-            <div className="grid gap-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-white/10 dark:bg-zinc-950/50">
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">SSH 用户名</span>
-                <input
-                  value={effectiveConfig.auth.username}
-                  onChange={(event) => {
-                    clearTransientResults();
-                    setDraftConfig((currentConfig) => ({
-                      ...currentConfig,
-                      auth:
-                        currentConfig.auth.method === "ssh-key"
-                          ? { ...currentConfig.auth, username: event.target.value }
-                          : currentConfig.auth,
-                    }));
-                  }}
-                  placeholder={getGitUsernamePlaceholder(draftConfig.repository, "ssh-key")}
-                  className="fridge-input"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">私钥</span>
-                <textarea
-                  value={effectiveConfig.auth.privateKey}
-                  onChange={(event) => {
-                    clearTransientResults();
-                    setDraftConfig((currentConfig) => ({
-                      ...currentConfig,
-                      auth:
-                        currentConfig.auth.method === "ssh-key"
-                          ? { ...currentConfig.auth, privateKey: event.target.value }
-                          : currentConfig.auth,
-                    }));
-                  }}
-                  rows={6}
-                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                  className="fridge-textarea"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">公钥（可选）</span>
-                <textarea
-                  value={effectiveConfig.auth.publicKey}
-                  onChange={(event) => {
-                    clearTransientResults();
-                    setDraftConfig((currentConfig) => ({
-                      ...currentConfig,
-                      auth:
-                        currentConfig.auth.method === "ssh-key"
-                          ? { ...currentConfig.auth, publicKey: event.target.value }
-                          : currentConfig.auth,
-                    }));
-                  }}
-                  rows={3}
-                  placeholder="ssh-ed25519 AAAA..."
-                  className="fridge-textarea"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">私钥密码（可选）</span>
-                <input
-                  type="password"
-                  value={effectiveConfig.auth.passphrase}
-                  onChange={(event) => {
-                    clearTransientResults();
-                    setDraftConfig((currentConfig) => ({
-                      ...currentConfig,
-                      auth:
-                        currentConfig.auth.method === "ssh-key"
-                          ? { ...currentConfig.auth, passphrase: event.target.value }
-                          : currentConfig.auth,
-                    }));
-                  }}
-                  placeholder="有密码就填，没有就留空"
-                  className="fridge-input"
-                />
-              </label>
-
-              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-900 dark:text-amber-100">
-                <p>检测平台：{platformLabel}</p>
-                <p>默认用户名：{getDefaultGitUsername(draftConfig.repository, "ssh-key")}</p>
-                {platformAuthHelp.map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={handleSave} className="fridge-button-primary">
-              保存配置
-            </button>
-            <button type="button" onClick={handleTest} disabled={!canTest} className="fridge-button-secondary">
-              {isTesting ? "测试中..." : "测试连接"}
-            </button>
-            <button type="button" onClick={handleInitialize} disabled={!canInitialize} className="fridge-button-secondary">
-              {isInitializing
-                ? lastGitTestResult?.hasFridgeConfig
-                  ? "载入中..."
-                  : "初始化中..."
-                : lastGitTestResult?.hasFridgeConfig
-                  ? `载入 ${fridgeConfigBranch}`
-                  : `初始化 ${fridgeConfigBranch}`}
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={!isDirty && !lastGitTestResult && !lastGitInitResult}
-              className="fridge-button-ghost"
-            >
-              还原草稿
+            <button type="button" onClick={handleClearCredentials} className="fridge-button-ghost w-fit">
+              清除本地凭证
             </button>
           </div>
+        ) : null}
 
-          {saveNotice ? <div className="fridge-state fridge-state--success">{saveNotice}</div> : null}
-          {actionHint ? (
-            <div className={`fridge-state ${actionHint.tone === "warning" ? "fridge-state--warning" : "fridge-state--info"}`}>
-              {actionHint.message}
-            </div>
-          ) : null}
-
-          <div className="fridge-panel-muted text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            <p className="font-medium text-zinc-900 dark:text-zinc-100">
-              {lastGitTestResult?.hasFridgeConfig ? "配置分支已存在" : "操作顺序"}
-            </p>
-            {lastGitTestResult?.hasFridgeConfig ? (
-              <>
-                <p>仓库中已存在 {fridgeConfigBranch} 分支。</p>
-                <p>点击&ldquo;载入 {fridgeConfigBranch}&rdquo;即可同步到本地。</p>
-              </>
-            ) : (
-              <>
-                <p>保存配置 → 测试连接 → 初始化 {fridgeConfigBranch}</p>
-              </>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={handleSave} className="fridge-button-primary">
+            保存配置
+          </button>
+          <button type="button" onClick={handleTest} disabled={!canTest} className="fridge-button-secondary">
+            {isTesting ? "测试中..." : "测试连接"}
+          </button>
+          <button type="button" onClick={handleInitialize} disabled={!canInitialize} className="fridge-button-secondary">
+            {isInitializing
+              ? lastGitTestResult?.hasFridgeConfig
+                ? "载入中..."
+                : "初始化中..."
+              : lastGitTestResult?.hasFridgeConfig
+                ? `载入 ${fridgeConfigBranch}`
+                : `初始化 ${fridgeConfigBranch}`}
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={!isDirty && !lastGitTestResult && !lastGitInitResult}
+            className="fridge-button-ghost"
+          >
+            还原草稿
+          </button>
         </div>
 
-        <aside className="fridge-panel-muted grid gap-4">
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">当前状态</h3>
-            <div className="space-y-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              <p>已保存：{formatDateTime(persistedConfig.updatedAt)}</p>
-              <p>仓库类型：{persistedConfig.kind === "local" ? "本地" : "远程"}</p>
-              <p>平台识别：{getGitPlatformLabel(detectRepositoryPlatform(persistedConfig.repository))}</p>
-              <p>认证方式：{formatAuthMethodLabel(persistedConfig.auth.method)}</p>
-              <p>配置分支：{fridgeConfigBranch}</p>
+        {saveNotice ? <div className="fridge-state fridge-state--success">{saveNotice}</div> : null}
+
+        {lastGitTestResult ? (
+          <div
+            className={[
+              "fridge-state",
+              lastGitTestResult.ok ? "fridge-state--success" : "fridge-state--error",
+            ].join(" ")}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <strong>{lastGitTestResult.ok ? "连接成功" : "连接失败"}</strong>
+              <span className="text-xs opacity-80">{formatDateTime(lastGitTestResult.checkedAt)}</span>
             </div>
+            <p className="mt-2">{lastGitTestResult.message}</p>
+            {lastGitTestResult.defaultBranch ? <p className="mt-2">默认分支：{lastGitTestResult.defaultBranch}</p> : null}
+            {lastGitTestResult.hasFridgeConfig !== undefined ? (
+              <p className="mt-2">
+                {fridgeConfigBranch} 分支：{lastGitTestResult.hasFridgeConfig ? "已存在" : "不存在"}
+              </p>
+            ) : null}
+            {lastGitTestResult.details ? <ResultDetails details={lastGitTestResult.details} /> : null}
           </div>
+        ) : null}
 
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">提示</h3>
-            <div className="space-y-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              <p>支持 GitHub / GitLab / Gitea / 通用 HTTPS 仓库。</p>
-              <p>浏览器模式初始化更适合远程 HTTPS 仓库。</p>
+        {lastGitInitResult ? (
+          <div
+            className={[
+              "fridge-state",
+              lastGitInitResult.ok ? "fridge-state--success" : "fridge-state--error",
+            ].join(" ")}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <strong>{lastGitInitResult.ok ? "初始化完成" : "初始化失败"}</strong>
+              <span className="text-xs opacity-80">{formatDateTime(lastGitInitResult.initializedAt)}</span>
             </div>
+            <p className="mt-2">{lastGitInitResult.message}</p>
+            {lastGitInitResult.branch ? <p className="mt-2">目标分支：{lastGitInitResult.branch}</p> : null}
+            {lastGitInitResult.commit ? <p className="mt-2">提交：{lastGitInitResult.commit}</p> : null}
+            {formatFileStatus(lastGitInitResult) ? (
+              <ResultDetails details={formatFileStatus(lastGitInitResult) ?? ""} label="查看初始化文件变更" />
+            ) : null}
+            {lastGitInitResult.details ? <ResultDetails details={lastGitInitResult.details} /> : null}
           </div>
-
-          {lastGitTestResult ? (
-            <div
-              className={[
-                "fridge-state",
-                lastGitTestResult.ok ? "fridge-state--success" : "fridge-state--error",
-              ].join(" ")}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <strong>{lastGitTestResult.ok ? "连接成功" : "连接失败"}</strong>
-                <span className="text-xs opacity-80">{formatDateTime(lastGitTestResult.checkedAt)}</span>
-              </div>
-              <p className="mt-2">{lastGitTestResult.message}</p>
-              {lastGitTestResult.defaultBranch ? <p className="mt-2">默认分支：{lastGitTestResult.defaultBranch}</p> : null}
-              {lastGitTestResult.hasFridgeConfig !== undefined ? (
-                <p className="mt-2">
-                  {fridgeConfigBranch} 分支：{lastGitTestResult.hasFridgeConfig ? "已存在" : "不存在"}
-                </p>
-              ) : null}
-              {lastGitTestResult.details ? <ResultDetails details={lastGitTestResult.details} /> : null}
-            </div>
-          ) : null}
-
-          {lastGitInitResult ? (
-            <div
-              className={[
-                "fridge-state",
-                lastGitInitResult.ok ? "fridge-state--success" : "fridge-state--error",
-              ].join(" ")}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <strong>{lastGitInitResult.ok ? "初始化完成" : "初始化失败"}</strong>
-                <span className="text-xs opacity-80">{formatDateTime(lastGitInitResult.initializedAt)}</span>
-              </div>
-              <p className="mt-2">{lastGitInitResult.message}</p>
-              {lastGitInitResult.branch ? <p className="mt-2">目标分支：{lastGitInitResult.branch}</p> : null}
-              {lastGitInitResult.commit ? <p className="mt-2">提交：{lastGitInitResult.commit}</p> : null}
-              {formatFileStatus(lastGitInitResult) ? (
-                <ResultDetails details={formatFileStatus(lastGitInitResult) ?? ""} label="查看初始化文件变更" />
-              ) : null}
-              {lastGitInitResult.details ? <ResultDetails details={lastGitInitResult.details} /> : null}
-            </div>
-          ) : (
-            <div className="fridge-panel-muted text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              点击“初始化 {fridgeConfigBranch}”后，应用会在临时克隆里创建配置文件并推送到专用分支。
-            </div>
-          )}
-        </aside>
+        ) : null}
       </div>
     </section>
   );

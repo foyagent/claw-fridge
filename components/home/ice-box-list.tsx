@@ -7,7 +7,7 @@ import { useMounted } from "@/hooks/use-mounted";
 import { formatLastBackupTime, getIceBoxStatusMeta, getIceBoxSyncStatusMeta } from "@/lib/ice-boxes";
 import { useAppStore } from "@/store/app-store";
 import { useIceBoxStore } from "@/store/ice-box-store";
-import type { IceBoxStatus, SyncPendingIceBoxesResult } from "@/types";
+import type { IceBoxStatus } from "@/types";
 
 function statusClassName(status: IceBoxStatus) {
   if (status === "healthy") {
@@ -37,23 +37,12 @@ function syncStatusClassName(syncStatus: ReturnType<typeof getIceBoxSyncStatusMe
   return "fridge-chip";
 }
 
-function ResultDetails({ details }: { details: string }) {
-  return (
-    <details className="mt-3 rounded-xl bg-black/5 p-3 text-xs leading-5 text-current dark:bg-black/20">
-      <summary className="cursor-pointer font-medium">查看细节</summary>
-      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{details}</pre>
-    </details>
-  );
-}
-
 function IceBoxListSkeleton() {
   return (
     <section className="fridge-panel grid gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-3">
-          <div className="h-4 w-24 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
-          <div className="h-8 w-52 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
-          <div className="h-4 w-72 animate-pulse rounded-full bg-zinc-100 dark:bg-white/5" />
+          <div className="h-8 w-24 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
         </div>
         <div className="h-11 w-36 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
       </div>
@@ -77,10 +66,7 @@ export function IceBoxList() {
   const isLoading = useIceBoxStore((state) => state.isLoading);
   const error = useIceBoxStore((state) => state.error);
   const loadIceBoxes = useIceBoxStore((state) => state.loadIceBoxes);
-  const syncPendingIceBoxes = useIceBoxStore((state) => state.syncPendingIceBoxes);
   const clearError = useIceBoxStore((state) => state.clearError);
-  const [isSyncingPending, setIsSyncingPending] = useState(false);
-  const [syncNotice, setSyncNotice] = useState<SyncPendingIceBoxesResult | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,7 +77,6 @@ export function IceBoxList() {
     void loadIceBoxes(useAppStore.getState().gitConfig);
   }, [gitConfigRepository, gitConfigUpdatedAt, loadIceBoxes, mounted]);
 
-  const pendingIceBoxes = useMemo(() => iceBoxes.filter((item) => item.syncStatus !== "synced"), [iceBoxes]);
   const activeExpandedId = useMemo(() => {
     if (!expandedId) {
       return null;
@@ -99,13 +84,6 @@ export function IceBoxList() {
 
     return iceBoxes.some((item) => item.id === expandedId) ? expandedId : null;
   }, [expandedId, iceBoxes]);
-
-  async function handleSyncPending() {
-    setIsSyncingPending(true);
-    const result = await syncPendingIceBoxes(gitConfig);
-    setSyncNotice(result);
-    setIsSyncingPending(false);
-  }
 
   function toggleExpanded(id: string) {
     setExpandedId((currentId) => (currentId === id ? null : id));
@@ -117,40 +95,12 @@ export function IceBoxList() {
 
   return (
     <section className="fridge-panel grid gap-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <span className="fridge-kicker">Ice Boxes</span>
-          <div className="space-y-2">
-            <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">冰盒列表</h2>
-            <p className="max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-300 sm:text-base">
-              点击冰盒即可在当前页展开详情。
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="fridge-chip">共 {iceBoxes.length} 个冰盒</span>
-          {pendingIceBoxes.length > 0 ? <span className="fridge-chip fridge-chip--warning">待同步 {pendingIceBoxes.length} 个</span> : null}
-          {pendingIceBoxes.length > 0 ? (
-            <button type="button" onClick={() => void handleSyncPending()} className="fridge-button-secondary" disabled={isSyncingPending}>
-              {isSyncingPending ? "正在同步待同步冰盒..." : "同步全部待同步冰盒"}
-            </button>
-          ) : null}
-          <Link href="/ice-boxes/new" className="fridge-button-primary">
-            创建新冰盒
-          </Link>
-        </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">冰盒</h2>
+        <Link href="/ice-boxes/new" className="fridge-button-primary">
+          新建冰盒
+        </Link>
       </div>
-
-      {syncNotice ? (
-        <div className={`fridge-state ${syncNotice.ok ? "fridge-state--success" : "fridge-state--warning"} grid gap-2`}>
-          <div>
-            <p className="font-medium">{syncNotice.message}</p>
-            <p className="mt-1 text-sm opacity-90">已成功同步 {syncNotice.syncedCount} 个冰盒。</p>
-          </div>
-          {syncNotice.details ? <ResultDetails details={syncNotice.details} /> : null}
-        </div>
-      ) : null}
 
       {error ? (
         <div className="fridge-state fridge-state--error flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -172,19 +122,10 @@ export function IceBoxList() {
       ) : null}
 
       {iceBoxes.length === 0 ? (
-        <div className="grid gap-5 rounded-[24px] border border-dashed border-zinc-300 bg-white/55 p-8 text-center dark:border-white/10 dark:bg-white/5">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--ocean-soft)] text-3xl">🧊</div>
-          <div className="space-y-2">
-            <h3 className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">还没有冰盒</h3>
-            <p className="mx-auto max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-300 sm:text-base">
-              先创建一个冰盒，随后在这里直接展开查看详情。
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/ice-boxes/new" className="fridge-button-primary">
-              创建第一个冰盒
-            </Link>
-          </div>
+        <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 bg-white/55 p-8 dark:border-white/10 dark:bg-white/5">
+          <Link href="/ice-boxes/new" className="fridge-button-primary w-fit">
+            新建冰盒
+          </Link>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -207,19 +148,11 @@ export function IceBoxList() {
                         <span className={statusClassName(iceBox.status)}>{statusMeta.label}</span>
                         <span className={syncStatusClassName(syncMeta.tone)}>{syncMeta.shortLabel}</span>
                       </div>
-                      <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-300">{statusMeta.description}</p>
                     </div>
                     <span className="text-sm font-medium text-zinc-500 transition group-hover:text-sky-700 dark:text-zinc-400 dark:group-hover:text-sky-300">
                       {isExpanded ? "收起" : "展开"}
                     </span>
                   </div>
-
-                  {iceBox.syncStatus !== "synced" ? (
-                    <div className="rounded-2xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
-                      <p className="font-medium">{syncMeta.label}</p>
-                      <p className="mt-1">{syncMeta.description}</p>
-                    </div>
-                  ) : null}
 
                   <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
