@@ -59,11 +59,30 @@ function formatErrorMessage(error: unknown) {
  * 创建代理 HTTP adapter
  * 所有 git 请求通过 /api/git/proxy 转发，解决 CORS 问题
  */
-function createProxyHttpAdapter(): {
+function createHttpAdapter(onAuth?: git.AuthCallback): {
   request: (req: git.GitHttpRequest) => Promise<git.GitHttpResponse>;
 } {
   return {
     request: async (req: git.GitHttpRequest): Promise<git.GitHttpResponse> => {
+      let authHeaders = req.headers;
+
+      if (onAuth) {
+        const auth = await onAuth(req.url, {
+          username: undefined,
+          password: undefined,
+        });
+
+        if (auth && typeof auth !== "boolean") {
+          const username = auth.username ?? "";
+          const password = auth.password ?? "";
+          const basic = Buffer.from(`${username}:${password}`).toString("base64");
+          authHeaders = {
+            ...req.headers,
+            Authorization: `Basic ${basic}`,
+          };
+        }
+      }
+
       // 读取 body
       let bodyContent: string | undefined;
       if (req.body) {
@@ -87,7 +106,7 @@ function createProxyHttpAdapter(): {
         body: JSON.stringify({
           url: req.url,
           method: req.method || "GET",
-          headers: req.headers,
+          headers: authHeaders,
           body: bodyContent,
         }),
       });
@@ -125,9 +144,6 @@ function createProxyHttpAdapter(): {
     },
   };
 }
-
-// 使用代理 http adapter
-const http = createProxyHttpAdapter();
 
 export class FrontendGitFallbackError extends Error {
   details?: string;
@@ -436,6 +452,7 @@ async function readJsonFile<T>(fsPromises: BrowserFsPromises, filePath: string):
 async function loadFridgeConfigRepo(config: GitRepositoryConfig, allowMissingBranch = false) {
   const { fs, dir } = await prepareRepoDir(config.repository);
   const onAuth = getAuthCallback(config);
+  const http = createHttpAdapter(onAuth);
   const branchExists = await git
     .listServerRefs({
       http,
@@ -485,6 +502,7 @@ async function commitAndPushIceBoxesFile(
   branchExists: boolean,
   message: string,
 ) {
+  const http = createHttpAdapter(onAuth);
   await git.add({ fs, dir, filepath: iceBoxesFileName });
   const statusMatrix = await git.statusMatrix({ fs, dir, filepaths: [iceBoxesFileName] });
   const hasNoChanges = statusMatrix.every(([, headStatus, workdirStatus, stageStatus]) => {
@@ -518,10 +536,11 @@ async function commitAndPushIceBoxesFile(
 }
 
 async function resolveDefaultBranch(config: GitRepositoryConfig) {
+  const onAuth = getAuthCallback(config);
   const refs = await git.listServerRefs({
-    http,
+    http: createHttpAdapter(onAuth),
     url: config.repository,
-    onAuth: getAuthCallback(config),
+    onAuth,
     protocolVersion: 2,
     symrefs: true,
     prefix: "HEAD",
@@ -538,10 +557,12 @@ export async function testGitConnection(input: GitRepositoryConfig): Promise<Git
   }
 
   try {
+    const onAuth = getAuthCallback(config);
+    const http = createHttpAdapter(onAuth);
     const refs = await git.listServerRefs({
       http,
       url: config.repository,
-      onAuth: getAuthCallback(config),
+      onAuth,
       protocolVersion: 2,
       symrefs: true,
       prefix: "HEAD",
@@ -550,7 +571,7 @@ export async function testGitConnection(input: GitRepositoryConfig): Promise<Git
     const branchRefs = await git.listServerRefs({
       http,
       url: config.repository,
-      onAuth: getAuthCallback(config),
+      onAuth,
       protocolVersion: 2,
       prefix: `refs/heads/${fridgeConfigBranch}`,
     }).catch(() => []);
@@ -593,6 +614,7 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
   try {
     const { fs, dir } = await prepareRepoDir(config.repository);
     const onAuth = getAuthCallback(config);
+    const http = createHttpAdapter(onAuth);
     const branchExists = await git
       .listServerRefs({
         http,
@@ -824,6 +846,7 @@ function buildIceBoxBranch(iceBoxId: string) {
 async function loadIceBoxBranchRepo(config: GitRepositoryConfig, iceBoxId: string) {
   const { fs, dir } = await prepareRepoDir(config.repository);
   const onAuth = getAuthCallback(config);
+  const http = createHttpAdapter(onAuth);
   const branch = buildIceBoxBranch(iceBoxId);
 
   const branchExists = await git
