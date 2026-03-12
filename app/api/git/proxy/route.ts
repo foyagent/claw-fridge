@@ -4,6 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
  * Git 透明代理
  * 解决浏览器 CORS 问题：前端 → /api/git/proxy → Git 服务器
  */
+
+export async function GET() {
+  return NextResponse.json({
+    message: "Git Proxy API",
+    usage: "POST with { url, method, headers, body }",
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
