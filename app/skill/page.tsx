@@ -4,7 +4,9 @@ import { isEncryptionEnabled } from "@/lib/backup-encryption";
 import {
   SkillDocumentError,
   createSkillDocumentModel,
+  parseIncludeGitCredentialsSearchParam,
   parseSkillConfigSearchParam,
+  parseSkillDocumentModeSearchParam,
 } from "@/lib/skill-document";
 
 function resolveRequestOrigin(requestHeaders: Headers): string | null {
@@ -59,7 +61,12 @@ export default async function SkillPage({
 
   try {
     const skillConfig = parseSkillConfigSearchParam(params.config);
-    model = createSkillDocumentModel(skillConfig, origin);
+    const mode = parseSkillDocumentModeSearchParam(params.mode);
+    const includeGitCredentials = parseIncludeGitCredentialsSearchParam(params.includeGitCredentials);
+    model = createSkillDocumentModel(skillConfig, origin, {
+      mode,
+      includeGitCredentials,
+    });
   } catch (error) {
     if (error instanceof SkillDocumentError) {
       errorMessage = error.message;
@@ -78,6 +85,7 @@ export default async function SkillPage({
         <section className="fridge-hero">
           <div className="relative z-10 flex flex-wrap items-center gap-3 text-sm font-medium">
             <span className="fridge-chip fridge-chip--ocean">Skill</span>
+            <span className="fridge-chip">{model.mode === "restore" ? "恢复" : "备份"}</span>
             <span className="fridge-chip">{model.backupModeLabel}</span>
             <span className="fridge-chip fridge-chip--coral">{model.config.iceBoxName}</span>
           </div>
@@ -85,17 +93,19 @@ export default async function SkillPage({
           <div className="relative z-10 grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
             <div className="space-y-3">
               <p className="fridge-kicker">Deliverable</p>
-              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">{model.config.iceBoxName} 的 Skill 文档</h1>
+              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">{model.config.iceBoxName} 的{model.mode === "restore" ? "恢复" : "备份"} Skill 文档</h1>
               <p className="max-w-3xl text-base leading-7 text-zinc-600 dark:text-zinc-300 sm:text-lg">
-                这个页面会输出可直接保存为 <code>SKILL.md</code> 的 Markdown 文档，同时把安装路径、Skill 链接、对应备份方案说明和恢复前后需要知道的关键参数都放齐。
+                这个页面会输出可直接保存为 <code>SKILL.md</code> 的 Markdown 文档，同时把安装路径、Skill 链接、对应流程说明，以及是否携带 Git 凭证占位符都放齐。
               </p>
             </div>
 
             <div className="fridge-panel-tint relative z-10 grid gap-3 text-sm leading-6 text-zinc-700 dark:text-zinc-200">
               <p>ice-box-id：`{model.config.iceBoxId}`</p>
               <p>machine-id：`{model.config.machineId}`</p>
+              <p>文档模式：{model.mode === "restore" ? "恢复" : "备份"}</p>
               <p>安装路径：`{model.installPath}`</p>
               <p>Git 认证：{model.gitAuthLabel}</p>
+              <p>Git 凭证占位符：{model.includeGitCredentials ? "已携带" : "未携带"}</p>
               <p>
                 上传加密：
                 {model.config.backupMode === "upload-token"

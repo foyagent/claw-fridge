@@ -27,14 +27,24 @@ export class SkillDocumentError extends Error {
   }
 }
 
+export type SkillDocumentMode = "backup" | "restore";
+
+export interface SkillDocumentOptions {
+  mode?: SkillDocumentMode;
+  includeGitCredentials?: boolean;
+}
+
 export interface SkillDocumentModel {
   skillName: string;
   installPath: string;
   skillLink: string | null;
   uploadUrl: string | null;
+  recoveryScriptUrl: string | null;
   backupModeLabel: string;
   gitAuthLabel: string;
   markdown: string;
+  mode: SkillDocumentMode;
+  includeGitCredentials: boolean;
   config: IceBoxSkillConfig;
 }
 
@@ -128,6 +138,30 @@ function escapeYamlString(value: string): string {
 
 function escapeShellValue(value: string): string {
   return `'${value.replace(/'/g, `"'"'`)}'`;
+}
+
+function readFirstSearchParamValue(value: SearchParamValue): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export function parseSkillDocumentModeSearchParam(value: SearchParamValue): SkillDocumentMode {
+  const rawValue = readFirstSearchParamValue(value)?.trim();
+
+  if (!rawValue || rawValue === "backup") {
+    return "backup";
+  }
+
+  if (rawValue === "restore") {
+    return "restore";
+  }
+
+  throw new SkillDocumentError("invalid-field", "`mode` 参数不合法，只支持 `backup` 或 `restore`。");
+}
+
+export function parseIncludeGitCredentialsSearchParam(value: SearchParamValue): boolean {
+  const rawValue = readFirstSearchParamValue(value)?.trim().toLowerCase();
+
+  return rawValue === "1" || rawValue === "true" || rawValue === "yes" || rawValue === "on";
 }
 
 function toSkillNameSegment(value: string): string {
@@ -351,16 +385,70 @@ function safelyBuildUploadUrl(origin: string | undefined, uploadPath: string | n
   }
 }
 
-function safelyBuildSkillLink(origin: string | undefined, config: IceBoxSkillConfig): string | null {
+function safelyBuildSkillLink(origin: string | undefined, config: IceBoxSkillConfig, options?: SkillDocumentOptions): string | null {
   if (!origin) {
     return null;
   }
 
   try {
-    return buildSkillLink(origin, config);
+    return buildSkillLink(origin, config, options);
   } catch {
     return null;
   }
+}
+
+function safelyBuildRecoveryScriptUrl(origin: string | undefined): string | null {
+  if (!origin) {
+    return null;
+  }
+
+  try {
+    return new URL("/recovery.sh", origin).toString();
+  } catch {
+    return null;
+  }
+}
+
+function buildCredentialPlaceholderSection(config: IceBoxSkillConfig): string[] {
+  if (config.gitAuthMethod === "https-token") {
+    return [
+      "## Git 凭证占位符",
+      "",
+      "这个 Skill 不直接内嵌真实凭证，只提供占位符模板。安装到 OpenClaw 后，请立刻替换成当前机器自己的值：",
+      "- `__CLAW_FRIDGE_GIT_USERNAME__`：Git 用户名。",
+      "- `__CLAW_FRIDGE_GIT_TOKEN__`：HTTPS Token / PAT / 密码。",
+      "- 推荐替换命令：`perl -0pi -e 's/__CLAW_FRIDGE_GIT_USERNAME__/你的用户名/g; s/__CLAW_FRIDGE_GIT_TOKEN__/你的令牌/g' ~/.openclaw/skills/<skill-name>/SKILL.md`",
+      "- 替换完成后，用 `grep '__CLAW_FRIDGE_' ~/.openclaw/skills/<skill-name>/SKILL.md` 确认没有残留占位符。",
+      "",
+      "```bash",
+      "export CLAW_FRIDGE_GIT_USERNAME=__CLAW_FRIDGE_GIT_USERNAME__",
+      "export CLAW_FRIDGE_GIT_TOKEN=__CLAW_FRIDGE_GIT_TOKEN__",
+      "git config credential.helper store",
+      "printf 'url=%s\nusername=%s\npassword=%s\n\n' \"${REPOSITORY}\" \"$CLAW_FRIDGE_GIT_USERNAME\" \"$CLAW_FRIDGE_GIT_TOKEN\" | git credential approve",
+      "```",
+      "",
+    ];
+  }
+
+  if (config.gitAuthMethod === "ssh-key") {
+    return [
+      "## Git 凭证占位符",
+      "",
+      "这个 Skill 不直接内嵌真实凭证，只提供占位符模板。安装到 OpenClaw 后，请立刻替换成当前机器自己的值：",
+      "- `__CLAW_FRIDGE_GIT_USERNAME__`：SSH 用户名，通常是 `git`。",
+      "- `__CLAW_FRIDGE_GIT_PRIVATE_KEY_PATH__`：私钥文件绝对路径，例如 `~/.ssh/id_ed25519`。",
+      "- 推荐替换命令：`perl -0pi -e 's/__CLAW_FRIDGE_GIT_USERNAME__/git/g; s#__CLAW_FRIDGE_GIT_PRIVATE_KEY_PATH__#/Users/you/.ssh/id_ed25519#g' ~/.openclaw/skills/<skill-name>/SKILL.md`",
+      "- 替换完成后，用 `grep '__CLAW_FRIDGE_' ~/.openclaw/skills/<skill-name>/SKILL.md` 确认没有残留占位符。",
+      "",
+      "```bash",
+      "export GIT_SSH_COMMAND=\"ssh -i __CLAW_FRIDGE_GIT_PRIVATE_KEY_PATH__ -o IdentitiesOnly=yes\"",
+      "ssh -T __CLAW_FRIDGE_GIT_USERNAME__@$(printf '%s' \"${REPOSITORY}\" | sed -E 's#^[^@]+@([^:/]+).*#\\1#; t; s#^https?://([^/]+).*#\\1#') || true",
+      "```",
+      "",
+    ];
+  }
+
+  return [];
 }
 
 function buildGitModeInstructions(config: IceBoxSkillConfig): string {
@@ -667,6 +755,53 @@ function buildUploadModeInstructions(config: IceBoxSkillConfig, uploadUrl: strin
   ].join("\n");
 }
 
+function buildRestoreModeInstructions(
+  config: IceBoxSkillConfig,
+  recoveryScriptUrl: string | null,
+  includeGitCredentials: boolean,
+): string {
+  const resolvedRecoveryScriptUrl = recoveryScriptUrl ?? "<missing-recovery-script-url>";
+  const targetRootPlaceholder = "/absolute/path/to/target-root";
+  const recoveryCommandParts = [
+    `curl -fsSL ${escapeShellValue(resolvedRecoveryScriptUrl)} | bash -s --`,
+    `  --repository ${escapeShellValue(config.repository)}`,
+    `  --machine-id ${escapeShellValue(config.machineId)}`,
+    `  --branch ${escapeShellValue(config.branch)}`,
+    `  --target-dir ${escapeShellValue(targetRootPlaceholder)}`,
+  ];
+
+  if (config.gitAuthMethod === "https-token") {
+    recoveryCommandParts.push(`  --username ${escapeShellValue(includeGitCredentials ? "__CLAW_FRIDGE_GIT_USERNAME__" : "<your-git-username>")}`);
+    recoveryCommandParts.push(`  --token ${escapeShellValue(includeGitCredentials ? "__CLAW_FRIDGE_GIT_TOKEN__" : "<your-git-token>")}`);
+  }
+
+  if (config.gitAuthMethod === "ssh-key") {
+    recoveryCommandParts.push(`  --ssh-key ${escapeShellValue(includeGitCredentials ? "__CLAW_FRIDGE_GIT_PRIVATE_KEY_PATH__" : "<your-private-key-path>")}`);
+  }
+
+  return [
+    "## 恢复工作流",
+    "",
+    "1. 这个 Skill 用于把远端冰盒快照恢复回本机 `.openclaw`。默认恢复到你指定目录下的 `.openclaw`，不会直接写系统根目录。",
+    "2. 新机器 / 空环境建议直接执行下面的一键恢复命令：",
+    "",
+    "```bash",
+    recoveryCommandParts.join(" \\\n"),
+    "```",
+    "",
+    "3. `--target-dir` 必须传 `.openclaw` 的父目录；例如想恢复到 `/Users/claw/.openclaw`，这里就填 `/Users/claw`。",
+    "4. 如果要回滚到某个历史版本，可额外加 `--commit <hash>`。脚本会先备份目标目录里已有的 `.openclaw`，再覆盖恢复。",
+    "5. 恢复后建议立即验证：",
+    "",
+    "```bash",
+    "test -d \"<target-dir>/.openclaw\"",
+    "find \"<target-dir>/.openclaw\" -maxdepth 2 | head -n 20",
+    "```",
+    "",
+    "6. 若当前机器已经在用 OpenClaw，也可以把 `--target-dir` 指向当前工作目录的父目录，执行后重启 OpenClaw 即可。",
+  ].concat(includeGitCredentials ? ["", ...buildCredentialPlaceholderSection(config)] : []).join("\n");
+}
+
 export function parseSkillConfig(value: unknown): IceBoxSkillConfig {
   if (!isRecord(value)) {
     throw new SkillDocumentError("invalid-config", "Skill 配置不是合法对象。");
@@ -732,18 +867,23 @@ export function parseSkillConfigSearchParam(config: SearchParamValue): IceBoxSki
   }
 }
 
-export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string): string {
-  const skillName = buildSkillName(config);
-  const skillLink = safelyBuildSkillLink(origin, config);
+export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string, options?: SkillDocumentOptions): string {
+  const mode = options?.mode ?? "backup";
+  const includeGitCredentials = options?.includeGitCredentials === true;
+  const skillName = mode === "restore" ? `${buildSkillName(config)}-restore` : buildSkillName(config);
+  const skillLink = safelyBuildSkillLink(origin, config, options);
   const uploadUrl = safelyBuildUploadUrl(origin, config.uploadPath);
+  const recoveryScriptUrl = safelyBuildRecoveryScriptUrl(origin);
 
   const description =
-    config.backupMode === "git-branch"
-      ? `Back up the current machine's .openclaw directory for Claw-Fridge Ice Box ${config.iceBoxName} (${config.iceBoxId}) by pushing to branch ${config.branch} in ${config.repository}. Use when the user asks to configure upstream, switch to the dedicated branch, run a backup, or set scheduled Git sync for this Ice Box.`
-      : `Back up the current machine's .openclaw directory for Claw-Fridge Ice Box ${config.iceBoxName} (${config.iceBoxId}) by creating a tar.gz archive and uploading it to the dedicated Claw-Fridge endpoint. Use when the user asks to package, upload, or validate archive backups for this Ice Box.`;
+    mode === "restore"
+      ? `Restore Claw-Fridge Ice Box ${config.iceBoxName} (${config.iceBoxId}) from branch ${config.branch} in ${config.repository} back into a local .openclaw directory. Use when the user asks to recover this Ice Box onto a new machine, overwrite an existing local clone, or roll back to a previous backup snapshot.`
+      : config.backupMode === "git-branch"
+        ? `Back up the current machine's .openclaw directory for Claw-Fridge Ice Box ${config.iceBoxName} (${config.iceBoxId}) by pushing to branch ${config.branch} in ${config.repository}. Use when the user asks to configure upstream, switch to the dedicated branch, run a backup, or set scheduled Git sync for this Ice Box.`
+        : `Back up the current machine's .openclaw directory for Claw-Fridge Ice Box ${config.iceBoxName} (${config.iceBoxId}) by creating a tar.gz archive and uploading it to the dedicated Claw-Fridge endpoint. Use when the user asks to package, upload, or validate archive backups for this Ice Box.`;
 
   const contextLines = [
-    "# Claw-Fridge Ice Box Backup",
+    mode === "restore" ? "# Claw-Fridge Ice Box Restore" : "# Claw-Fridge Ice Box Backup",
     "",
     "## Context",
     `- Ice Box Name: \`${config.iceBoxName}\``,
@@ -755,10 +895,16 @@ export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string): 
     `- git-auth-method: \`${config.gitAuthMethod}\``,
     `- git-username: ${config.gitUsername ? `\`${config.gitUsername}\`` : "`<none>`"}`,
     `- created-at: \`${config.createdAt}\``,
+    `- document-mode: \`${mode}\``,
+    `- include-git-credentials-placeholders: \`${includeGitCredentials ? "true" : "false"}\``,
   ];
 
   if (skillLink) {
     contextLines.push(`- skill-link: ${skillLink}`);
+  }
+
+  if (recoveryScriptUrl) {
+    contextLines.push(`- recovery-script-url: ${recoveryScriptUrl}`);
   }
 
   if (config.backupMode === "upload-token") {
@@ -783,11 +929,15 @@ export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string): 
     "- Work only inside the user's `.openclaw` directory unless the user explicitly says otherwise.",
     "- Do not delete backups, branches, or remote files unless the user clearly asks.",
     "- Explain missing prerequisites before attempting write operations.",
-    "- After each backup attempt, report the branch, destination, and any actionable errors.",
+    mode === "restore"
+      ? "- Before overwrite restore, explain the target path and confirm whether the existing `.openclaw` should be backed up first."
+      : "- After each backup attempt, report the branch, destination, and any actionable errors.",
     "",
-    config.backupMode === "git-branch"
-      ? buildGitModeInstructions(config)
-      : buildUploadModeInstructions(config, uploadUrl),
+    mode === "restore"
+      ? buildRestoreModeInstructions(config, recoveryScriptUrl, includeGitCredentials)
+      : config.backupMode === "git-branch"
+        ? [buildGitModeInstructions(config), ...(includeGitCredentials ? ["", ...buildCredentialPlaceholderSection(config)] : [])].join("\n")
+        : [buildUploadModeInstructions(config, uploadUrl), ...(includeGitCredentials ? ["", ...buildCredentialPlaceholderSection(config)] : [])].join("\n"),
   ].join("\n");
 
   return [
@@ -801,19 +951,29 @@ export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string): 
   ].join("\n");
 }
 
-export function createSkillDocumentModel(config: IceBoxSkillConfig, origin?: string): SkillDocumentModel {
-  const skillName = buildSkillName(config);
-  const skillLink = safelyBuildSkillLink(origin, config);
+export function createSkillDocumentModel(
+  config: IceBoxSkillConfig,
+  origin?: string,
+  options?: SkillDocumentOptions,
+): SkillDocumentModel {
+  const mode = options?.mode ?? "backup";
+  const includeGitCredentials = options?.includeGitCredentials === true;
+  const skillName = mode === "restore" ? `${buildSkillName(config)}-restore` : buildSkillName(config);
+  const skillLink = safelyBuildSkillLink(origin, config, options);
   const uploadUrl = safelyBuildUploadUrl(origin, config.uploadPath);
+  const recoveryScriptUrl = safelyBuildRecoveryScriptUrl(origin);
 
   return {
     skillName,
     installPath: `~/.openclaw/skills/${skillName}/SKILL.md`,
     skillLink,
     uploadUrl,
+    recoveryScriptUrl,
     backupModeLabel: backupModeLabels[config.backupMode],
     gitAuthLabel: gitAuthLabels[config.gitAuthMethod],
-    markdown: buildSkillMarkdown(config, origin),
+    markdown: buildSkillMarkdown(config, origin, options),
+    mode,
+    includeGitCredentials,
     config,
   };
 }

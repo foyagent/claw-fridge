@@ -18,6 +18,7 @@ import {
   formatLastBackupTime,
   getIceBoxBackupModeMeta,
   getIceBoxStatusMeta,
+  getIceBoxSyncStatusMeta,
 } from "@/lib/ice-boxes";
 import { useAppStore } from "@/store/app-store";
 import { useIceBoxStore } from "@/store/ice-box-store";
@@ -110,13 +111,14 @@ export function IceBoxDetail({ id }: { id: string }) {
   const router = useRouter();
   const gitConfig = useAppStore((state) => state.gitConfig);
   const iceBoxes = useIceBoxStore((state) => state.iceBoxes);
-  const hasHydrated = useIceBoxStore((state) => state.hasHydrated);
+  // const hasHydrated = useIceBoxStore((state) => state.hasHydrated);
   const hasLoaded = useIceBoxStore((state) => state.hasLoaded);
   const isLoading = useIceBoxStore((state) => state.isLoading);
   const error = useIceBoxStore((state) => state.error);
   const loadIceBoxes = useIceBoxStore((state) => state.loadIceBoxes);
   const updateIceBoxReminder = useIceBoxStore((state) => state.updateIceBoxReminder);
   const resetIceBoxReminder = useIceBoxStore((state) => state.resetIceBoxReminder);
+  const syncIceBox = useIceBoxStore((state) => state.syncIceBox);
   const syncIceBoxBackupState = useIceBoxStore((state) => state.syncIceBoxBackupState);
   const deleteIceBox = useIceBoxStore((state) => state.deleteIceBox);
   const clearError = useIceBoxStore((state) => state.clearError);
@@ -124,6 +126,7 @@ export function IceBoxDetail({ id }: { id: string }) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [hasDeleted, setHasDeleted] = useState(false);
+  const [includeGitCredentialsInSkill, setIncludeGitCredentialsInSkill] = useState(false);
   const [restoreTargetRootDir, setRestoreTargetRootDir] = useState("");
   const [restorePreview, setRestorePreview] = useState<RestorePreviewResult | null>(null);
   const [restoreResult, setRestoreResult] = useState<RestoreBackupResult | null>(null);
@@ -139,14 +142,16 @@ export function IceBoxDetail({ id }: { id: string }) {
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<IceBoxHistoryEntry | null>(null);
   const [reminderDraft, setReminderDraft] = useState<IceBoxReminderConfig | null>(null);
   const [reminderNotice, setReminderNotice] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<OperationNotice | null>(null);
+  const [isSyncingToRemote, setIsSyncingToRemote] = useState(false);
 
   useEffect(() => {
-    if (!mounted || !hasHydrated || hasLoaded) {
+    if (!mounted || hasLoaded) {
       return;
     }
 
-    void loadIceBoxes();
-  }, [hasHydrated, hasLoaded, loadIceBoxes, mounted]);
+    void loadIceBoxes(gitConfig);
+  }, [hasLoaded, loadIceBoxes, mounted, gitConfig]);
 
   const iceBox = useMemo(() => {
     return iceBoxes.find((item) => item.id === id) ?? null;
@@ -169,6 +174,8 @@ export function IceBoxDetail({ id }: { id: string }) {
     setIsLoadingHistory(false);
     setHasLoadedHistory(false);
     setSelectedHistoryEntry(null);
+    setSyncNotice(null);
+    setIsSyncingToRemote(false);
   }, [id]);
 
   const hasConfiguredRepository = Boolean(gitConfig.repository.trim());
@@ -204,7 +211,25 @@ export function IceBoxDetail({ id }: { id: string }) {
 
   async function handleRetry() {
     clearError();
-    await loadIceBoxes();
+    await loadIceBoxes(gitConfig);
+  }
+
+  async function handleSyncToRemote() {
+    if (!iceBox) {
+      return;
+    }
+
+    setIsSyncingToRemote(true);
+    setSyncNotice(null);
+
+    const result = await syncIceBox(iceBox.id, gitConfig);
+
+    setSyncNotice({
+      message: result.message,
+      details: result.details,
+      tone: result.ok ? "success" : "error",
+    });
+    setIsSyncingToRemote(false);
   }
 
   async function handleDelete() {
@@ -213,7 +238,7 @@ export function IceBoxDetail({ id }: { id: string }) {
     clearError();
 
     try {
-      await deleteIceBox(id);
+      await deleteIceBox(id, gitConfig);
       setHasDeleted(true);
       router.replace("/");
     } catch (actionError) {
@@ -421,7 +446,7 @@ export function IceBoxDetail({ id }: { id: string }) {
       updatedAt,
     );
 
-    updateIceBoxReminder(iceBox.id, nextReminder);
+    updateIceBoxReminder(iceBox.id, nextReminder, gitConfig);
     setReminderDraft(nextReminder);
     setReminderNotice("提醒配置已保存。下次提醒时间和状态已同步刷新。");
   }
@@ -431,11 +456,11 @@ export function IceBoxDetail({ id }: { id: string }) {
       return;
     }
 
-    resetIceBoxReminder(iceBox.id);
+    resetIceBoxReminder(iceBox.id, gitConfig);
     setReminderNotice("提醒配置已恢复为默认每周提醒。");
   }
 
-  if (!mounted || !hasHydrated || (isLoading && !hasLoaded)) {
+  if (!mounted || (isLoading && !hasLoaded)) {
     return <IceBoxDetailSkeleton />;
   }
 
@@ -500,6 +525,7 @@ export function IceBoxDetail({ id }: { id: string }) {
   }
 
   const statusMeta = getIceBoxStatusMeta(iceBox.status);
+  const syncMeta = getIceBoxSyncStatusMeta(iceBox.syncStatus);
   const backupModeMeta = getIceBoxBackupModeMeta(iceBox.backupMode);
   const encryptionEnabled = isEncryptionEnabled(iceBox.skillConfig.encryption);
   const latestHistoryEntry = historyEntries[0] ?? null;
@@ -511,8 +537,31 @@ export function IceBoxDetail({ id }: { id: string }) {
     lastBackupAt: effectiveLastBackupAt,
   });
   const origin = window.location.origin;
-  const skillLink = buildSkillLink(origin, iceBox.skillConfig);
+  const skillLink = buildSkillLink(origin, iceBox.skillConfig, {
+    includeGitCredentials: includeGitCredentialsInSkill,
+  });
+  const restoreSkillLink = buildSkillLink(origin, iceBox.skillConfig, {
+    mode: "restore",
+    includeGitCredentials: includeGitCredentialsInSkill,
+  });
   const uploadUrl = buildUploadUrl(origin, iceBox.uploadPath);
+  const recoveryScriptUrl = `${origin}/recovery.sh`;
+  const recoveryCommand = [
+    `curl -fsSL ${recoveryScriptUrl} | bash -s --`,
+    `--repository '${iceBox.skillConfig.repository}'`,
+    `--machine-id '${iceBox.machineId}'`,
+    `--branch '${iceBox.branch}'`,
+    `--target-dir '/absolute/path/to/target-root'`,
+    ...(iceBox.skillConfig.gitAuthMethod === "https-token"
+      ? [
+          `--username '${includeGitCredentialsInSkill ? "__CLAW_FRIDGE_GIT_USERNAME__" : "<your-git-username>"}'`,
+          `--token '${includeGitCredentialsInSkill ? "__CLAW_FRIDGE_GIT_TOKEN__" : "<your-git-token>"}'`,
+        ]
+      : []),
+    ...(iceBox.skillConfig.gitAuthMethod === "ssh-key"
+      ? [`--ssh-key '${includeGitCredentialsInSkill ? "__CLAW_FRIDGE_GIT_PRIVATE_KEY_PATH__" : "<your-private-key-path>"}'`]
+      : []),
+  ].join(" ");
 
   return (
     <section className="grid gap-6">
@@ -525,6 +574,9 @@ export function IceBoxDetail({ id }: { id: string }) {
             <span className="fridge-chip fridge-chip--ocean">{backupModeMeta.label}</span>
             <span className={`fridge-chip ${iceBox.backupMode === "upload-token" ? "fridge-chip--coral" : "fridge-chip--success"}`}>
               {iceBox.backupMode === "upload-token" ? "上传模式" : "Git 直推"}
+            </span>
+            <span className={`fridge-chip ${iceBox.syncStatus === "synced" ? "fridge-chip--success" : "fridge-chip--warning"}`}>
+              {syncMeta.shortLabel}
             </span>
           </div>
           <div className="space-y-2">
@@ -542,6 +594,11 @@ export function IceBoxDetail({ id }: { id: string }) {
 
         <div className="fridge-panel-tint flex flex-wrap items-center gap-3 text-sm leading-6 text-zinc-700 dark:text-zinc-200">
           <p>先看状态与连接信息，再去备份历史挑版本，最后在恢复面板里执行预览与恢复。</p>
+          {iceBox.syncStatus !== "synced" ? (
+            <button type="button" onClick={() => void handleSyncToRemote()} className="fridge-button-secondary" disabled={isSyncingToRemote}>
+              {isSyncingToRemote ? "正在同步到远端..." : "立即同步到远端"}
+            </button>
+          ) : null}
           <Link href="/ice-boxes/new" className="fridge-button-primary">
             创建新冰盒
           </Link>
@@ -549,6 +606,28 @@ export function IceBoxDetail({ id }: { id: string }) {
       </div>
 
       {error ? <ErrorBanner message={error} onRetry={() => void handleRetry()} /> : null}
+
+      {iceBox.syncStatus !== "synced" ? (
+        <div className="fridge-state fridge-state--warning grid gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">这台冰盒目前只保证本地存在，尚未确认写入远端。</p>
+              <p className="mt-1 opacity-90">{syncMeta.description}</p>
+            </div>
+            <button type="button" onClick={() => void handleSyncToRemote()} className="fridge-button-secondary" disabled={isSyncingToRemote}>
+              {isSyncingToRemote ? "正在同步到远端..." : "立即同步到远端"}
+            </button>
+          </div>
+          {iceBox.lastSyncError ? <ResultDetails details={iceBox.lastSyncError} /> : null}
+        </div>
+      ) : null}
+
+      {syncNotice ? (
+        <div className={`fridge-state ${syncNotice.tone === "success" ? "fridge-state--success" : "fridge-state--warning"}`}>
+          <p className="font-medium">{syncNotice.message}</p>
+          {syncNotice.details ? <ResultDetails details={syncNotice.details} /> : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
@@ -575,6 +654,14 @@ export function IceBoxDetail({ id }: { id: string }) {
               <dd className="font-medium text-zinc-900 dark:text-zinc-100">
                 {encryptionEnabled ? "已启用 AES-256-GCM" : "未启用"}
               </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>远端同步状态</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{syncMeta.label}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt>最近同步时间</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
               <dt>创建时间</dt>
@@ -758,25 +845,39 @@ export function IceBoxDetail({ id }: { id: string }) {
             <p className="font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</p>
             <p className="mt-2">{backupModeMeta.description}</p>
             <p className="mt-4 text-zinc-500 dark:text-zinc-400">
-              Skill 会自动带上冰盒唯一标识、仓库信息，以及当前备份方案需要的配置字段。
-              {iceBox.backupMode === "upload-token"
-                ? encryptionEnabled
-                  ? " 上传模式会附带本地加密脚本、解密请求头和风险提示。"
-                  : " 上传模式还会附带 tar 打包命令、带进度条的 curl 上传命令、返回结果校验和重试说明。"
-                : " Git 模式会附带上游配置、同步脚本和定时任务模板。"}
+              这里同时提供备份 Skill、恢复 Skill 和新机器一键恢复命令。勾选后不会直接塞真实凭证，只会在文档里带上占位符，安装后再手动替换。
             </p>
+            <label className="mt-4 inline-flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              <input
+                type="checkbox"
+                checked={includeGitCredentialsInSkill}
+                onChange={(event) => setIncludeGitCredentialsInSkill(event.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
+              />
+              安装 Skill 时携带 Git 凭证占位符
+            </label>
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <Link
                 href={skillLink}
                 className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
               >
-                打开 Skill 文档
+                打开备份 Skill
+              </Link>
+              <Link
+                href={restoreSkillLink}
+                className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
+              >
+                打开恢复 Skill
               </Link>
             </div>
           </div>
           <div className="rounded-[24px] border border-dashed border-zinc-300 p-5 text-sm leading-6 text-zinc-500 dark:border-white/10 dark:text-zinc-400">
-            <p>Skill 链接</p>
+            <p>备份 Skill 链接</p>
             <p className="mt-2 break-all font-mono text-xs text-zinc-800 dark:text-zinc-200">{skillLink}</p>
+            <p className="mt-4">恢复 Skill 链接</p>
+            <p className="mt-2 break-all font-mono text-xs text-zinc-800 dark:text-zinc-200">{restoreSkillLink}</p>
+            <p className="mt-4">新机器一键恢复命令</p>
+            <p className="mt-2 break-all font-mono text-xs text-zinc-800 dark:text-zinc-200">{recoveryCommand}</p>
           </div>
         </div>
 
