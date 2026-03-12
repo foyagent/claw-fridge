@@ -9,13 +9,33 @@ import {
   normalizeIceBoxReminderConfig,
 } from "@/lib/ice-box-reminders";
 import { iceBoxBranchPrefix } from "@/lib/git";
-import { fetchIceBoxesSnapshot } from "@/lib/ice-boxes";
 import { normalizeGitConfig } from "@/lib/git-config";
-import { createEncryptedPersistStorage } from "@/lib/secure-storage";
-import type { CreateIceBoxResult, CreateUploadTokenResult, IceBoxListItem, IceBoxStoreState } from "@/types";
+import type {
+  CreateIceBoxResult,
+  CreateUploadTokenResult,
+  GitRepositoryConfig,
+  IceBoxListItem,
+  IceBoxRecord,
+  IceBoxStoreState,
+  IceBoxSyncStatus,
+  SyncIceBoxResult,
+  SyncPendingIceBoxesResult,
+} from "@/types";
 
 interface PersistedIceBoxStoreState {
   iceBoxes: IceBoxListItem[];
+}
+
+interface IceBoxesSyncResult {
+  ok: boolean;
+  message: string;
+  details?: string;
+  syncedAt: string;
+  items?: IceBoxRecord[];
+  item?: IceBoxRecord;
+  commit?: string;
+  errorCode?: string;
+  statusCode?: number;
 }
 
 const defaultState = {
@@ -53,9 +73,46 @@ function createIceBoxResult(message: string, details?: string): CreateIceBoxResu
   };
 }
 
+function createSyncIceBoxResult(message: string, details?: string): SyncIceBoxResult {
+  return {
+    ok: false,
+    message,
+    details,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+function createSyncPendingIceBoxesResult(
+  message: string,
+  syncedCount = 0,
+  failedIds: string[] = [],
+  details?: string,
+): SyncPendingIceBoxesResult {
+  return {
+    ok: false,
+    message,
+    details,
+    syncedAt: new Date().toISOString(),
+    syncedCount,
+    failedIds,
+  };
+}
+
+function normalizeSyncStatus(syncStatus: IceBoxSyncStatus | undefined): IceBoxSyncStatus {
+  if (syncStatus === "pending-sync" || syncStatus === "sync-failed" || syncStatus === "synced") {
+    return syncStatus;
+  }
+
+  return "synced";
+}
+
 function normalizeIceBoxItem(item: IceBoxListItem): IceBoxListItem {
   return {
     ...item,
+    syncStatus: normalizeSyncStatus(item.syncStatus),
+    lastSyncAt: item.lastSyncAt ?? null,
+    lastSyncError: item.lastSyncError ?? null,
+    deletedAt: item.deletedAt ?? null,
     reminder: normalizeIceBoxReminderConfig(item.reminder, item.updatedAt || item.createdAt),
     skillConfig: {
       ...item.skillConfig,
@@ -64,32 +121,155 @@ function normalizeIceBoxItem(item: IceBoxListItem): IceBoxListItem {
   };
 }
 
+function recordToListItem(record: IceBoxRecord): IceBoxListItem {
+  return normalizeIceBoxItem({
+    ...record,
+    syncStatus: normalizeSyncStatus(record.syncStatus),
+    lastSyncAt: record.lastSyncAt ?? null,
+    lastSyncError: record.lastSyncError ?? null,
+    deletedAt: record.deletedAt ?? null,
+    status: "attention",
+    lastBackupAt: null,
+  });
+}
+
+function markIceBoxSyncState(
+  item: IceBoxListItem,
+  syncStatus: IceBoxSyncStatus,
+  syncedAt: string | null,
+  syncError: string | null,
+): IceBoxListItem {
+  return normalizeIceBoxItem({
+    ...item,
+    syncStatus,
+    lastSyncAt: syncedAt,
+    lastSyncError: syncError,
+  });
+}
+
+async function syncIceBoxWithRemote(
+  item: IceBoxListItem,
+  gitConfig: GitRepositoryConfig,
+): Promise<SyncIceBoxResult> {
+  const normalizedGitConfig = normalizeGitConfig(gitConfig);
+
+  if (!normalizedGitConfig.repository) {
+    return createSyncIceBoxResult("请先在首页保存 Git 仓库配置，再同步到远端。");
+  }
+
+  try {
+    const response = await fetch(`/api/ice-boxes/${item.id}/sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        gitConfig: normalizedGitConfig,
+        item,
+      }),
+    });
+
+    const payload = await readApiPayload<IceBoxesSyncResult>(response);
+
+    if (!response.ok || !payload.ok) {
+      return {
+        ok: false,
+        message: payload.message || "同步冰盒到远端失败。",
+        details: payload.details,
+        syncedAt: payload.syncedAt ?? new Date().toISOString(),
+      };
+    }
+
+    return {
+      ok: true,
+      message: payload.message,
+      details: payload.details,
+      syncedAt: payload.syncedAt,
+      commit: payload.commit,
+      item: payload.item ? recordToListItem(payload.item) : undefined,
+    };
+  } catch (error) {
+    const notice = toRequestFailureNotice("同步到远端时", error);
+
+    return {
+      ok: false,
+      message: notice.message,
+      details: notice.details,
+      syncedAt: new Date().toISOString(),
+    };
+  }
+}
+
 export const useIceBoxStore = create<IceBoxStoreState>()(
   persist(
     (set, get) => ({
       ...defaultState,
       setHydrated: (hasHydrated) => set({ hasHydrated }),
-      loadIceBoxes: async () => {
+      loadIceBoxes: async (gitConfig: GitRepositoryConfig) => {
         if (get().isLoading) {
           return;
         }
 
         set({ isLoading: true, error: null });
 
+        const normalizedGitConfig = normalizeGitConfig(gitConfig);
+
+        if (!normalizedGitConfig.repository) {
+          set({
+            hasLoaded: true,
+            isLoading: false,
+            error: null,
+          });
+          return;
+        }
+
         try {
-          const iceBoxes = await fetchIceBoxesSnapshot(get().iceBoxes.map(normalizeIceBoxItem));
+          const response = await fetch("/api/ice-boxes/list", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              gitConfig: normalizedGitConfig,
+            }),
+          });
+
+          const payload = await readApiPayload<IceBoxesSyncResult>(response);
+
+          if (!response.ok || !payload.ok) {
+            console.warn("Failed to load ice boxes from GitHub:", payload.message);
+            set({
+              hasLoaded: true,
+              isLoading: false,
+              error: null,
+            });
+            return;
+          }
+
+          const items = payload.items ?? [];
+          const remoteIceBoxes = items.map(recordToListItem);
+          const mergedIceBoxes = new Map(remoteIceBoxes.map((item) => [item.id, item]));
+
+          for (const localItem of get().iceBoxes) {
+            if (localItem.syncStatus !== "synced" && !mergedIceBoxes.has(localItem.id)) {
+              mergedIceBoxes.set(localItem.id, normalizeIceBoxItem(localItem));
+            }
+          }
 
           set({
-            iceBoxes,
+            iceBoxes: Array.from(mergedIceBoxes.values()).sort((left, right) =>
+              new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime(),
+            ),
             hasLoaded: true,
             isLoading: false,
             error: null,
           });
         } catch (error) {
+          console.warn("Failed to load ice boxes from GitHub:", error);
           set({
             hasLoaded: true,
             isLoading: false,
-            error: error instanceof Error ? error.message : "加载冰盒列表失败，请稍后重试。",
+            error: null,
           });
         }
       },
@@ -122,11 +302,11 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
           const iceBoxId = machineId;
           const branch = `${iceBoxBranchPrefix}/${machineId}`;
 
-          if (existingIceBoxes.some((item) => item.id === iceBoxId || item.machineId === machineId)) {
+          if (existingIceBoxes.some((existingItem) => existingItem.id === iceBoxId || existingItem.machineId === machineId)) {
             return createIceBoxResult(`machine-id \`${machineId}\` 已存在，请换一个。`);
           }
 
-          if (existingIceBoxes.some((item) => item.branch === branch)) {
+          if (existingIceBoxes.some((existingItem) => existingItem.branch === branch)) {
             return createIceBoxResult(`备份分支 \`${branch}\` 已被占用，请换一个 machine-id。`);
           }
 
@@ -155,14 +335,12 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
                 return createIceBoxResult(notice.message, notice.details);
               }
 
-              const result = payload;
-
-              if (!result.ok || !result.uploadPath || !result.uploadToken) {
-                return createIceBoxResult(result.message, result.details);
+              if (!payload.ok || !payload.uploadPath || !payload.uploadToken) {
+                return createIceBoxResult(payload.message, payload.details);
               }
 
-              uploadPath = result.uploadPath;
-              uploadToken = result.uploadToken;
+              uploadPath = payload.uploadPath;
+              uploadToken = payload.uploadToken;
             } catch (error) {
               const notice = toRequestFailureNotice("生成上传地址时", error);
 
@@ -170,7 +348,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
             }
           }
 
-          const item: IceBoxListItem = {
+          const localItem = normalizeIceBoxItem({
             id: iceBoxId,
             name,
             machineId,
@@ -179,6 +357,10 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
             uploadPath,
             uploadToken,
             reminder: createDefaultIceBoxReminderConfig(createdAt),
+            syncStatus: "pending-sync",
+            lastSyncAt: null,
+            lastSyncError: null,
+            deletedAt: null,
             status: "attention",
             lastBackupAt: null,
             createdAt,
@@ -198,44 +380,163 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               encryption: input.encryption,
               createdAt,
             },
-          };
+          });
 
           set({
-            iceBoxes: [item, ...existingIceBoxes],
+            iceBoxes: [localItem, ...existingIceBoxes],
             hasLoaded: true,
             error: null,
           });
 
+          const syncResult = await syncIceBoxWithRemote(localItem, normalizedGitConfig);
+
+          if (syncResult.ok) {
+            const syncedItem = normalizeIceBoxItem(
+              syncResult.item ?? markIceBoxSyncState(localItem, "sync-failed", null, "远端已返回成功，但缺少校验后的冰盒记录。"),
+            );
+
+            set((state) => ({
+              iceBoxes: state.iceBoxes.map((existingItem) => (existingItem.id === syncedItem.id ? syncedItem : existingItem)),
+              hasLoaded: true,
+              error: null,
+            }));
+
+            return {
+              ok: true,
+              message: "冰盒已创建，并已通过远端回读校验。",
+              details: syncResult.commit ? `配置提交：${syncResult.commit.slice(0, 8)}` : undefined,
+              createdAt,
+              item: syncedItem,
+            };
+          }
+
+          const failedItem = markIceBoxSyncState(localItem, "sync-failed", null, syncResult.details ?? syncResult.message);
+
+          set((state) => ({
+            iceBoxes: state.iceBoxes.map((existingItem) => (existingItem.id === failedItem.id ? failedItem : existingItem)),
+            hasLoaded: true,
+            error: null,
+          }));
+
           return {
             ok: true,
-            message: "冰盒已创建，可继续打开 Skill 文档或前往详情页。",
+            message: "冰盒已创建到本地，但尚未通过远端校验，可稍后重试同步。",
+            details: syncResult.details ?? syncResult.message,
             createdAt,
-            item,
+            item: failedItem,
           };
         } finally {
           set({ isCreating: false });
         }
       },
-      updateIceBoxReminder: (id, reminder) => {
-        const updatedAt = new Date().toISOString();
+      syncIceBox: async (id, gitConfig) => {
+        const target = get().iceBoxes.find((item) => item.id === id);
+
+        if (!target) {
+          return createSyncIceBoxResult("冰盒不存在，可能尚未加载到本地缓存。", `ice-box-id: ${id}`);
+        }
+
+        const syncingAt = new Date().toISOString();
 
         set((state) => ({
-          iceBoxes: state.iceBoxes.map((item) => {
-            if (item.id !== id) {
-              return item;
-            }
-
-            return {
-              ...item,
-              reminder: normalizeIceBoxReminderConfig(reminder, updatedAt),
-              updatedAt,
-            };
-          }),
+          iceBoxes: state.iceBoxes.map((item) =>
+            item.id === id ? markIceBoxSyncState({ ...item, updatedAt: syncingAt }, "pending-sync", item.lastSyncAt, null) : item,
+          ),
           error: null,
         }));
+
+        const syncResult = await syncIceBoxWithRemote({ ...target, updatedAt: syncingAt }, gitConfig);
+
+        if (syncResult.ok) {
+          const syncedItem = normalizeIceBoxItem(
+            syncResult.item
+              ?? markIceBoxSyncState(
+                { ...target, updatedAt: syncingAt },
+                "sync-failed",
+                target.lastSyncAt,
+                "远端已返回成功，但缺少校验后的冰盒记录。",
+              ),
+          );
+
+          set((state) => ({
+            iceBoxes: state.iceBoxes.map((item) => (item.id === id ? syncedItem : item)),
+            error: null,
+          }));
+
+          return {
+            ...syncResult,
+            item: syncedItem,
+            message: syncResult.message || "已通过远端回读校验。",
+          };
+        }
+
+        const failedItem = markIceBoxSyncState(
+          { ...target, updatedAt: syncingAt },
+          "sync-failed",
+          target.lastSyncAt,
+          syncResult.details ?? syncResult.message,
+        );
+
+        set((state) => ({
+          iceBoxes: state.iceBoxes.map((item) => (item.id === id ? failedItem : item)),
+          error: null,
+        }));
+
+        return {
+          ...syncResult,
+          item: failedItem,
+        };
       },
-      resetIceBoxReminder: (id) => {
+      syncPendingIceBoxes: async (gitConfig) => {
+        const pendingIceBoxes = get().iceBoxes.filter((item) => item.syncStatus !== "synced");
+
+        if (pendingIceBoxes.length === 0) {
+          return {
+            ok: true,
+            message: "当前没有待同步的冰盒。",
+            syncedAt: new Date().toISOString(),
+            syncedCount: 0,
+            failedIds: [],
+          };
+        }
+
+        let syncedCount = 0;
+        const failedIds: string[] = [];
+        const failureMessages: string[] = [];
+
+        for (const item of pendingIceBoxes) {
+          const result = await get().syncIceBox(item.id, gitConfig);
+
+          if (result.ok) {
+            syncedCount += 1;
+          } else {
+            failedIds.push(item.id);
+            failureMessages.push(`${item.name}: ${result.message}`);
+          }
+        }
+
+        if (failedIds.length === 0) {
+          return {
+            ok: true,
+            message: `已同步全部 ${syncedCount} 个待同步冰盒。`,
+            syncedAt: new Date().toISOString(),
+            syncedCount,
+            failedIds,
+          };
+        }
+
+        return createSyncPendingIceBoxesResult(
+          syncedCount > 0
+            ? `已同步 ${syncedCount} 个冰盒，仍有 ${failedIds.length} 个需要稍后重试。`
+            : "待同步冰盒暂未成功同步到远端。",
+          syncedCount,
+          failedIds,
+          failureMessages.join("\n"),
+        );
+      },
+      updateIceBoxReminder: async (id, reminder, gitConfig) => {
         const updatedAt = new Date().toISOString();
+        const normalizedReminder = normalizeIceBoxReminderConfig(reminder, updatedAt);
 
         set((state) => ({
           iceBoxes: state.iceBoxes.map((item) => {
@@ -243,14 +544,135 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               return item;
             }
 
-            return {
+            return normalizeIceBoxItem({
               ...item,
-              reminder: createDefaultIceBoxReminderConfig(updatedAt),
+              reminder: normalizedReminder,
               updatedAt,
-            };
+            });
           }),
           error: null,
         }));
+
+        if (gitConfig?.repository) {
+          try {
+            const normalizedGitConfig = normalizeGitConfig(gitConfig);
+            const response = await fetch(`/api/ice-boxes/${id}`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                gitConfig: normalizedGitConfig,
+                updates: {
+                  reminder: normalizedReminder,
+                  updatedAt,
+                },
+              }),
+            });
+
+            const payload = await readApiPayload<IceBoxesSyncResult>(response);
+
+            set((state) => ({
+              iceBoxes: state.iceBoxes.map((item) => {
+                if (item.id !== id) {
+                  return item;
+                }
+
+                if (!response.ok || !payload.ok) {
+                  return markIceBoxSyncState(item, "sync-failed", item.lastSyncAt, payload.details ?? payload.message);
+                }
+
+                return markIceBoxSyncState(item, "synced", payload.syncedAt, null);
+              }),
+              error: null,
+            }));
+          } catch (error) {
+            console.warn("Failed to sync reminder update to GitHub:", error);
+            set((state) => ({
+              iceBoxes: state.iceBoxes.map((item) =>
+                item.id === id
+                  ? markIceBoxSyncState(
+                      item,
+                      "sync-failed",
+                      item.lastSyncAt,
+                      error instanceof Error ? error.message : "同步提醒配置失败。",
+                    )
+                  : item,
+              ),
+              error: null,
+            }));
+          }
+        }
+      },
+      resetIceBoxReminder: async (id, gitConfig) => {
+        const updatedAt = new Date().toISOString();
+        const nextReminder = createDefaultIceBoxReminderConfig(updatedAt);
+
+        set((state) => ({
+          iceBoxes: state.iceBoxes.map((item) => {
+            if (item.id !== id) {
+              return item;
+            }
+
+            return normalizeIceBoxItem({
+              ...item,
+              reminder: nextReminder,
+              updatedAt,
+            });
+          }),
+          error: null,
+        }));
+
+        if (gitConfig?.repository) {
+          try {
+            const normalizedGitConfig = normalizeGitConfig(gitConfig);
+            const response = await fetch(`/api/ice-boxes/${id}`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                gitConfig: normalizedGitConfig,
+                updates: {
+                  reminder: nextReminder,
+                  updatedAt,
+                },
+              }),
+            });
+
+            const payload = await readApiPayload<IceBoxesSyncResult>(response);
+
+            set((state) => ({
+              iceBoxes: state.iceBoxes.map((item) => {
+                if (item.id !== id) {
+                  return item;
+                }
+
+                if (!response.ok || !payload.ok) {
+                  return markIceBoxSyncState(item, "sync-failed", item.lastSyncAt, payload.details ?? payload.message);
+                }
+
+                return markIceBoxSyncState(item, "synced", payload.syncedAt, null);
+              }),
+              error: null,
+            }));
+          } catch (error) {
+            console.warn("Failed to sync reminder reset to GitHub:", error);
+            set((state) => ({
+              iceBoxes: state.iceBoxes.map((item) =>
+                item.id === id
+                  ? markIceBoxSyncState(
+                      item,
+                      "sync-failed",
+                      item.lastSyncAt,
+                      error instanceof Error ? error.message : "同步提醒配置失败。",
+                    )
+                  : item,
+              ),
+              error: null,
+            }));
+          }
+        }
       },
       syncIceBoxBackupState: (id, lastBackupAt) => {
         set((state) => ({
@@ -259,19 +681,41 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               return item;
             }
 
-            return {
+            return normalizeIceBoxItem({
               ...item,
               lastBackupAt,
               status: lastBackupAt ? "healthy" : "attention",
-            };
+            });
           }),
         }));
       },
-      deleteIceBox: async (id) => {
+      deleteIceBox: async (id, gitConfig) => {
         const target = get().iceBoxes.find((item) => item.id === id);
 
         if (!target) {
           throw new Error("冰盒不存在，可能已经被删除或尚未同步到本地。");
+        }
+
+        if (gitConfig?.repository) {
+          try {
+            const normalizedGitConfig = normalizeGitConfig(gitConfig);
+            const response = await fetch(`/api/ice-boxes/${id}`, {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                gitConfig: normalizedGitConfig,
+              }),
+            });
+
+            if (!response.ok) {
+              const payload = await readApiPayload<IceBoxesSyncResult>(response);
+              console.warn("Failed to delete ice box from GitHub:", payload.message);
+            }
+          } catch (error) {
+            console.warn("Failed to delete ice box from GitHub:", error);
+          }
         }
 
         set({
@@ -283,10 +727,28 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
     }),
     {
       name: "claw-fridge-ice-box-store",
-      storage: createEncryptedPersistStorage<PersistedIceBoxStoreState>(),
-      partialize: (state): PersistedIceBoxStoreState => ({
+      storage: {
+        getItem: (name) => {
+          if (typeof window === "undefined") return null;
+          const raw = localStorage.getItem(name);
+          if (!raw) return null;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            localStorage.removeItem(name);
+            return null;
+          }
+        },
+        setItem: (name, value) => {
+          localStorage.setItem(name, JSON.stringify(value));
+        },
+        removeItem: (name) => {
+          localStorage.removeItem(name);
+        },
+      },
+      partialize: (state) => ({
         iceBoxes: state.iceBoxes,
-      }),
+      }) as IceBoxStoreState,
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
       },

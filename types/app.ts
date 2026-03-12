@@ -144,11 +144,17 @@ export interface IceBoxRecord {
   uploadToken: string | null;
   reminder: IceBoxReminderConfig;
   skillConfig: IceBoxSkillConfig;
+  syncStatus?: IceBoxSyncStatus;
+  lastSyncAt?: string | null;
+  lastSyncError?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type IceBoxStatus = "healthy" | "syncing" | "attention";
+
+export type IceBoxSyncStatus = "synced" | "pending-sync" | "sync-failed";
 
 export interface IceBoxListItem {
   id: string;
@@ -160,6 +166,10 @@ export interface IceBoxListItem {
   uploadToken: string | null;
   reminder: IceBoxReminderConfig;
   skillConfig: IceBoxSkillConfig;
+  syncStatus: IceBoxSyncStatus;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  deletedAt: string | null;
   status: IceBoxStatus;
   lastBackupAt: string | null;
   createdAt: string;
@@ -203,6 +213,20 @@ export interface CreateIceBoxResult extends OperationResultFields {
   ok: boolean;
   createdAt: string;
   item?: IceBoxListItem;
+}
+
+export interface SyncIceBoxResult extends OperationResultFields {
+  ok: boolean;
+  syncedAt: string;
+  item?: IceBoxListItem;
+  commit?: string;
+}
+
+export interface SyncPendingIceBoxesResult extends OperationResultFields {
+  ok: boolean;
+  syncedAt: string;
+  syncedCount: number;
+  failedIds: string[];
 }
 
 export interface CreateUploadTokenInput {
@@ -395,11 +419,13 @@ export interface IceBoxStoreState {
   isCreating: boolean;
   error: string | null;
   setHydrated: (hasHydrated: boolean) => void;
-  loadIceBoxes: () => Promise<void>;
+  loadIceBoxes: (gitConfig: GitRepositoryConfig) => Promise<void>;
   createIceBox: (input: CreateIceBoxInput) => Promise<CreateIceBoxResult>;
-  updateIceBoxReminder: (id: string, reminder: IceBoxReminderConfig) => void;
-  resetIceBoxReminder: (id: string) => void;
+  syncIceBox: (id: string, gitConfig: GitRepositoryConfig) => Promise<SyncIceBoxResult>;
+  syncPendingIceBoxes: (gitConfig: GitRepositoryConfig) => Promise<SyncPendingIceBoxesResult>;
+  updateIceBoxReminder: (id: string, reminder: IceBoxReminderConfig, gitConfig?: GitRepositoryConfig) => Promise<void>;
+  resetIceBoxReminder: (id: string, gitConfig?: GitRepositoryConfig) => Promise<void>;
   syncIceBoxBackupState: (id: string, lastBackupAt: string | null) => void;
-  deleteIceBox: (id: string) => Promise<void>;
+  deleteIceBox: (id: string, gitConfig: GitRepositoryConfig) => Promise<void>;
   clearError: () => void;
 }
