@@ -285,6 +285,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
 
         if (!normalizedGitConfig.repository) {
           set({
+            iceBoxes: [],
             hasLoaded: true,
             isLoading: false,
             error: null,

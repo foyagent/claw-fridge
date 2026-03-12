@@ -69,6 +69,8 @@ function IceBoxListSkeleton() {
 export function IceBoxList() {
   const mounted = useMounted();
   const gitConfig = useAppStore((state) => state.gitConfig);
+  const gitConfigRepository = gitConfig.repository;
+  const gitConfigUpdatedAt = gitConfig.updatedAt;
   const iceBoxes = useIceBoxStore((state) => state.iceBoxes);
   const hasLoaded = useIceBoxStore((state) => state.hasLoaded);
   const isLoading = useIceBoxStore((state) => state.isLoading);
@@ -80,12 +82,12 @@ export function IceBoxList() {
   const [syncNotice, setSyncNotice] = useState<SyncPendingIceBoxesResult | null>(null);
 
   useEffect(() => {
-    if (!mounted || hasLoaded) {
+    if (!mounted) {
       return;
     }
 
-    void loadIceBoxes(gitConfig);
-  }, [hasLoaded, loadIceBoxes, mounted, gitConfig]);
+    void loadIceBoxes(useAppStore.getState().gitConfig);
+  }, [gitConfigRepository, gitConfigUpdatedAt, loadIceBoxes, mounted]);
 
   const pendingIceBoxes = useMemo(() => iceBoxes.filter((item) => item.syncStatus !== "synced"), [iceBoxes]);
 
