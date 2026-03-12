@@ -230,16 +230,6 @@ async function createSshAskPassScript(directory: string): Promise<string> {
   return askPassPath;
 }
 
-async function createHttpsAskPassScript(directory: string): Promise<string> {
-  const askPassPath = path.join(directory, "https-askpass.sh");
-  const scriptContent = `#!/bin/sh\ncase "$1" in\n  *Username*) printf '%s' "$CLAW_FRIDGE_GIT_USERNAME" ;;\n  *Password*) printf '%s' "$CLAW_FRIDGE_GIT_PASSWORD" ;;\n  *) printf '%s' "$CLAW_FRIDGE_GIT_PASSWORD" ;;\nesac\n`;
-
-  await writeFile(askPassPath, scriptContent, "utf8");
-  await chmod(askPassPath, 0o700);
-
-  return askPassPath;
-}
-
 async function prepareSshEnvironment(auth: GitSshKeyAuthConfig): Promise<{
   env: NodeJS.ProcessEnv;
   cleanup: () => Promise<void>;
@@ -423,9 +413,20 @@ export async function tryRunGitCommand(
   }
 }
 
+async function createHttpsAskPassScript(directory: string): Promise<string> {
+  const askPassPath = path.join(directory, "https-askpass.sh");
+  const scriptContent = `#!/bin/sh\ncase "$1" in\n  *Username*) printf '%s' "$CLAW_FRIDGE_GIT_USERNAME" ;;\n  *Password*) printf '%s' "$CLAW_FRIDGE_GIT_PASSWORD" ;;\n  *) printf '%s' "$CLAW_FRIDGE_GIT_PASSWORD" ;;\nesac\n`;
+
+  await writeFile(askPassPath, scriptContent, "utf8");
+  await chmod(askPassPath, 0o700);
+
+  return askPassPath;
+}
+
 export async function prepareInitializationEnvironment(config: GitRepositoryConfig): Promise<{
   repository: string;
   env: NodeJS.ProcessEnv;
+  onAuth?: () => { username: string; password: string };
   cleanup: () => Promise<void>;
 }> {
   if (config.kind === "local") {
@@ -441,7 +442,9 @@ export async function prepareInitializationEnvironment(config: GitRepositoryConf
 
   if (isHttpsRepository(config.repository)) {
     if (config.auth.method === "https-token") {
-      if (!config.auth.token.trim()) {
+      const httpsAuth = config.auth;
+
+      if (!httpsAuth.token.trim()) {
         throw new Error(
           [
             "请先填写 HTTPS Token，再初始化 fridge-config 分支。",
@@ -460,9 +463,13 @@ export async function prepareInitializationEnvironment(config: GitRepositoryConf
           GIT_TERMINAL_PROMPT: "0",
           GIT_ASKPASS: askPassPath,
           CLAW_FRIDGE_GIT_USERNAME:
-            config.auth.username.trim() || getDefaultGitUsername(config.repository, "https-token"),
-          CLAW_FRIDGE_GIT_PASSWORD: config.auth.token.trim(),
+            httpsAuth.username.trim() || getDefaultGitUsername(config.repository, "https-token"),
+          CLAW_FRIDGE_GIT_PASSWORD: httpsAuth.token.trim(),
         },
+        onAuth: () => ({
+          username: httpsAuth.username.trim() || getDefaultGitUsername(config.repository, "https-token"),
+          password: httpsAuth.token.trim(),
+        }),
         cleanup: async () => {
           await rm(tempDirectory, { recursive: true, force: true });
         },
@@ -557,49 +564,106 @@ export async function initializeFridgeConfigBranch(input: GitRepositoryConfig): 
 
   const targetRoot = config.kind === "local" ? expandHomeDirectory(config.repository) : config.repository;
 
+  if (isSshRepository(config.repository)) {
+    return {
+      ok: false,
+      initializedAt,
+      message: "初始化 `fridge-config` 分支失败。",
+      details: [
+        "当前仓库地址使用 SSH。初始化流程已改为 isomorphic-git，但该库在当前实现里不直接支持 SSH 推送。",
+        "请将仓库地址改为 HTTPS 并使用 Token 后重试。",
+        ...getGitPlatformAuthHelp(config.repository, "ssh-key"),
+      ].join("\n"),
+      errorCode: "git_init_failed",
+      statusCode: 400,
+      branch: fridgeConfigBranch,
+      root: targetRoot,
+    };
+  }
+
   let cleanupEnvironment: (() => Promise<void>) | undefined;
   let tempDirectory: string | undefined;
+  let workingDirectory = targetRoot;
+  let localOriginalBranch: string | undefined;
 
   try {
     const prepared = await prepareInitializationEnvironment(config);
     cleanupEnvironment = prepared.cleanup;
-    tempDirectory = await mkdtemp(path.join(os.tmpdir(), "claw-fridge-init-"));
-    const workingDirectory = path.join(tempDirectory, "repository");
 
-    await runGitCommand(["clone", "--no-checkout", prepared.repository, workingDirectory], {
-      env: prepared.env,
-    });
+    if (config.kind === "local") {
+      localOriginalBranch = (await git.currentBranch({ fs, dir: targetRoot, fullname: false, test: true })) ?? undefined;
+    } else {
+      tempDirectory = await mkdtemp(path.join(os.tmpdir(), "claw-fridge-init-"));
+      workingDirectory = path.join(tempDirectory, "repository");
+      await git.clone({
+        fs,
+        http,
+        dir: workingDirectory,
+        url: prepared.repository,
+        remote: "origin",
+        noCheckout: true,
+        onAuth: prepared.onAuth,
+      });
+    }
 
-    await runGitCommand(["config", "user.name", gitCommitAuthorName], {
-      cwd: workingDirectory,
-      env: prepared.env,
-    });
-    await runGitCommand(["config", "user.email", gitCommitAuthorEmail], {
-      cwd: workingDirectory,
-      env: prepared.env,
-    });
-
-    const branchExists = await tryRunGitCommand(
-      ["ls-remote", "--exit-code", "--heads", "origin", fridgeConfigBranch],
-      {
-        cwd: workingDirectory,
-        env: prepared.env,
-      },
-    );
+    const branchExists = config.kind === "local"
+      ? (await git.listBranches({ fs, dir: workingDirectory })).includes(fridgeConfigBranch)
+      : (await git.listBranches({ fs, dir: workingDirectory, remote: "origin" })).includes(fridgeConfigBranch);
 
     if (branchExists) {
-      await runGitCommand(["fetch", "origin", `${fridgeConfigBranch}:refs/remotes/origin/${fridgeConfigBranch}`], {
-        cwd: workingDirectory,
-        env: prepared.env,
-      });
-      await runGitCommand(["checkout", "-B", fridgeConfigBranch, `origin/${fridgeConfigBranch}`], {
-        cwd: workingDirectory,
-        env: prepared.env,
-      });
+      await git.checkout(
+        config.kind === "local"
+          ? {
+              fs,
+              dir: workingDirectory,
+              ref: fridgeConfigBranch,
+              force: true,
+            }
+          : {
+              fs,
+              dir: workingDirectory,
+              remote: "origin",
+              ref: fridgeConfigBranch,
+              force: true,
+            },
+      );
     } else {
-      await runGitCommand(["checkout", "--orphan", fridgeConfigBranch], {
-        cwd: workingDirectory,
-        env: prepared.env,
+      await git.branch({
+        fs,
+        dir: workingDirectory,
+        ref: fridgeConfigBranch,
+        checkout: true,
+      });
+
+      const entries = await fs.promises.readdir(workingDirectory, { withFileTypes: true });
+      await Promise.all(
+        entries
+          .filter((entry) => entry.name !== ".git")
+          .map((entry) => rm(path.join(workingDirectory, entry.name), { recursive: true, force: true })),
+      );
+      await writeFile(path.join(workingDirectory, ".gitignore"), "# Managed by Claw Fridge\n", "utf8");
+      await git.add({ fs, dir: workingDirectory, filepath: ".gitignore" });
+      const bootstrapCommit = await git.commit({
+        fs,
+        dir: workingDirectory,
+        message: "Initialize fridge-config branch",
+        author: {
+          name: gitCommitAuthorName,
+          email: gitCommitAuthorEmail,
+        },
+        committer: {
+          name: gitCommitAuthorName,
+          email: gitCommitAuthorEmail,
+        },
+      });
+      await git.remove({ fs, dir: workingDirectory, filepath: ".gitignore" });
+      await rm(path.join(workingDirectory, ".gitignore"), { force: true });
+
+      logDevInfo("git-config.init", "fridge-config bootstrap commit created", {
+        branch: fridgeConfigBranch,
+        repositoryKind: config.kind,
+        root: targetRoot,
+        commit: bootstrapCommit,
       });
     }
 
@@ -609,10 +673,8 @@ export async function initializeFridgeConfigBranch(input: GitRepositoryConfig): 
       skipExisting: true,
     });
 
-    const hasNoStagedChanges = await tryRunGitCommand(["diff", "--cached", "--quiet"], {
-      cwd: workingDirectory,
-      env: prepared.env,
-    });
+    const statusMatrix = await git.statusMatrix({ fs, dir: workingDirectory });
+    const hasNoStagedChanges = statusMatrix.every(([, headStatus, , stageStatus]) => stageStatus === headStatus);
 
     if (hasNoStagedChanges) {
       logDevInfo("git-config.init", "fridge-config already initialized", {
@@ -633,19 +695,31 @@ export async function initializeFridgeConfigBranch(input: GitRepositoryConfig): 
       };
     }
 
-    await runGitCommand(["commit", "-m", "Initialize fridge-config branch"], {
-      cwd: workingDirectory,
-      env: prepared.env,
-    });
-    await runGitCommand(["push", "-u", "origin", fridgeConfigBranch], {
-      cwd: workingDirectory,
-      env: prepared.env,
+    const commit = await git.commit({
+      fs,
+      dir: workingDirectory,
+      message: "Initialize fridge-config branch",
+      author: {
+        name: gitCommitAuthorName,
+        email: gitCommitAuthorEmail,
+      },
+      committer: {
+        name: gitCommitAuthorName,
+        email: gitCommitAuthorEmail,
+      },
     });
 
-    const commit = (await runGitCommand(["rev-parse", "HEAD"], {
-      cwd: workingDirectory,
-      env: prepared.env,
-    })).stdout.trim();
+    if (config.kind !== "local") {
+      await git.push({
+        fs,
+        http,
+        dir: workingDirectory,
+        remote: "origin",
+        ref: fridgeConfigBranch,
+        remoteRef: fridgeConfigBranch,
+        onAuth: prepared.onAuth,
+      });
+    }
 
     logDevInfo("git-config.init", "fridge-config initialized", {
       branch: fridgeConfigBranch,
@@ -680,6 +754,19 @@ export async function initializeFridgeConfigBranch(input: GitRepositoryConfig): 
       root: targetRoot,
     };
   } finally {
+    if (config.kind === "local" && localOriginalBranch && localOriginalBranch !== fridgeConfigBranch) {
+      try {
+        await git.checkout({
+          fs,
+          dir: workingDirectory,
+          ref: localOriginalBranch,
+          force: true,
+        });
+      } catch {
+        // 忽略恢复工作树失败，避免遮蔽主错误
+      }
+    }
+
     if (cleanupEnvironment) {
       await cleanupEnvironment();
     }
