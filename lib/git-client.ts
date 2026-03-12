@@ -4,7 +4,16 @@ import http from "isomorphic-git/http/web";
 import { fridgeConfigBranch, fridgeConfigFileName, fridgeConfigSchemaVersion, iceBoxesFileName } from "@/lib/fridge-config.constants";
 import { buildGitConfigErrorResult, getDefaultGitUsername, getGitPlatformAuthHelp, isHttpsRepository, isSshRepository, normalizeGitConfig } from "@/lib/git-config";
 import { iceBoxBranchPrefix } from "@/lib/git";
-import type { GitConfigInitResult, GitConfigTestResult, GitRepositoryConfig } from "@/types";
+import type {
+  GitConfigInitResult,
+  GitConfigTestResult,
+  GitRepositoryConfig,
+  IceBoxBranchSyncResult,
+  IceBoxesFile,
+  IceBoxListItem,
+  IceBoxRecord,
+  IceBoxSyncResult,
+} from "@/types";
 
 const gitCommitAuthorName = "Claw Fridge";
 const gitCommitAuthorEmail = "claw-fridge@local";
@@ -302,6 +311,116 @@ async function clearTrackedFiles(fs: BrowserFs, dir: string) {
   }
 }
 
+function normalizeIceBoxSyncStatus(syncStatus: IceBoxRecord["syncStatus"]): "synced" | "pending-sync" | "sync-failed" {
+  if (syncStatus === "pending-sync" || syncStatus === "sync-failed" || syncStatus === "synced") {
+    return syncStatus;
+  }
+
+  return "synced";
+}
+
+function buildEmptyIceBoxesFile(now: string): IceBoxesFile {
+  return {
+    version: fridgeConfigSchemaVersion,
+    initializedAt: now,
+    updatedAt: now,
+    items: [],
+  };
+}
+
+async function readJsonFile<T>(fsPromises: BrowserFsPromises, filePath: string): Promise<T | null> {
+  try {
+    const content = await fsPromises.readFile(filePath, "utf8");
+    return JSON.parse(content as string) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function loadFridgeConfigRepo(config: GitRepositoryConfig, allowMissingBranch = false) {
+  const { fs, dir } = await prepareRepoDir(config.repository);
+  const onAuth = getAuthCallback(config);
+  const branchExists = await git
+    .listServerRefs({
+      http,
+      url: config.repository,
+      onAuth,
+      protocolVersion: 2,
+      prefix: `refs/heads/${fridgeConfigBranch}`,
+    })
+    .then((refs) => refs.some((ref) => ref.ref === `refs/heads/${fridgeConfigBranch}`));
+
+  if (!branchExists) {
+    if (allowMissingBranch) {
+      await git.init({ fs, dir, defaultBranch: fridgeConfigBranch });
+      await git.addRemote({ fs, dir, remote: "origin", url: config.repository });
+      await git.checkout({ fs, dir, ref: fridgeConfigBranch });
+      return { fs, dir, onAuth, branchExists: false };
+    }
+
+    throw new Error(`远程分支 ${fridgeConfigBranch} 不存在，请先初始化仓库配置。`);
+  }
+
+  await git.clone({
+    fs,
+    http,
+    dir,
+    url: config.repository,
+    ref: fridgeConfigBranch,
+    singleBranch: true,
+    depth: 1,
+    onAuth,
+  });
+
+  await git.checkout({ fs, dir, ref: fridgeConfigBranch, force: true });
+
+  return { fs, dir, onAuth, branchExists: true };
+}
+
+async function readIceBoxesFileFromRepo(fsPromises: BrowserFsPromises, dir: string): Promise<IceBoxesFile> {
+  const file = await readJsonFile<IceBoxesFile>(fsPromises, `${dir}/${iceBoxesFileName}`);
+  return file ?? buildEmptyIceBoxesFile(new Date().toISOString());
+}
+
+async function commitAndPushIceBoxesFile(
+  fs: BrowserFs,
+  dir: string,
+  onAuth: ReturnType<typeof getAuthCallback>,
+  branchExists: boolean,
+  message: string,
+) {
+  await git.add({ fs, dir, filepath: iceBoxesFileName });
+  const statusMatrix = await git.statusMatrix({ fs, dir, filepaths: [iceBoxesFileName] });
+  const hasNoChanges = statusMatrix.every(([, headStatus, workdirStatus, stageStatus]) => {
+    const normalizedWorktree = workdirStatus === 0 ? headStatus : workdirStatus;
+    return headStatus === normalizedWorktree && headStatus === stageStatus;
+  });
+
+  if (hasNoChanges) {
+    return { commit: undefined, pushed: false };
+  }
+
+  const commit = await git.commit({
+    fs,
+    dir,
+    author: { name: gitCommitAuthorName, email: gitCommitAuthorEmail },
+    committer: { name: gitCommitAuthorName, email: gitCommitAuthorEmail },
+    message,
+  });
+
+  await git.push({
+    fs,
+    http,
+    dir,
+    remote: "origin",
+    ref: fridgeConfigBranch,
+    onAuth,
+    force: !branchExists,
+  });
+
+  return { commit, pushed: true };
+}
+
 async function resolveDefaultBranch(config: GitRepositoryConfig) {
   const refs = await git.listServerRefs({
     http,
@@ -466,4 +585,138 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
       branch: fridgeConfigBranch,
     };
   }
+}
+
+export async function listIceBoxes(input: GitRepositoryConfig): Promise<IceBoxListItem[]> {
+  const config = withStoredCredentials(input);
+  const unsupported = requireRemoteHttps(config);
+  if (unsupported) {
+    throw new Error(unsupported.details || unsupported.message);
+  }
+
+  const { fs, dir } = await loadFridgeConfigRepo(config, true);
+  const iceBoxesFile = await readIceBoxesFileFromRepo(fs.promises, dir);
+
+  return iceBoxesFile.items
+    .filter((item) => !item.deletedAt)
+    .map((record) => ({
+      ...record,
+      syncStatus: normalizeIceBoxSyncStatus(record.syncStatus),
+      lastSyncAt: record.lastSyncAt ?? null,
+      lastSyncError: record.lastSyncError ?? null,
+      deletedAt: record.deletedAt ?? null,
+      status: "attention",
+      lastBackupAt: null,
+    }));
+}
+
+export async function addIceBox(input: GitRepositoryConfig, item: IceBoxRecord): Promise<IceBoxSyncResult> {
+  const config = withStoredCredentials(input);
+  const unsupported = requireRemoteHttps(config);
+  const syncedAt = new Date().toISOString();
+  if (unsupported) {
+    return { ok: false, syncedAt, message: unsupported.message, details: unsupported.details };
+  }
+
+  try {
+    const { fs, dir, onAuth, branchExists } = await loadFridgeConfigRepo(config, true);
+    const iceBoxesFile = await readIceBoxesFileFromRepo(fs.promises, dir);
+
+    if (iceBoxesFile.items.some((existingItem) => existingItem.id === item.id)) {
+      return {
+        ok: false,
+        syncedAt,
+        message: `冰盒 ${item.id} 已存在。`,
+        items: iceBoxesFile.items,
+      };
+    }
+
+    iceBoxesFile.items.push({ ...item, updatedAt: syncedAt });
+    iceBoxesFile.updatedAt = syncedAt;
+    await writeTextFile(fs.promises, `${dir}/${iceBoxesFileName}`, serializeJson(iceBoxesFile));
+    const { commit } = await commitAndPushIceBoxesFile(fs, dir, onAuth, branchExists, `Add ice box: ${item.name} (${item.id})`);
+    const createdItem = iceBoxesFile.items.find((candidate) => candidate.id === item.id);
+
+    return {
+      ok: true,
+      syncedAt,
+      message: `冰盒 ${item.name} 已同步到远端。`,
+      items: iceBoxesFile.items,
+      item: createdItem,
+      commit,
+    };
+  } catch (error) {
+    const classified = classifyGitError(config.repository, error);
+    return { ok: false, syncedAt, message: classified.message, details: classified.details };
+  }
+}
+
+export async function updateIceBox(
+  input: GitRepositoryConfig,
+  id: string,
+  updates: Partial<IceBoxRecord>,
+): Promise<IceBoxSyncResult> {
+  const config = withStoredCredentials(input);
+  const unsupported = requireRemoteHttps(config);
+  const syncedAt = new Date().toISOString();
+  if (unsupported) {
+    return { ok: false, syncedAt, message: unsupported.message, details: unsupported.details };
+  }
+
+  try {
+    const { fs, dir, onAuth, branchExists } = await loadFridgeConfigRepo(config);
+    const iceBoxesFile = await readIceBoxesFileFromRepo(fs.promises, dir);
+    const index = iceBoxesFile.items.findIndex((item) => item.id === id);
+
+    if (index < 0) {
+      return { ok: false, syncedAt, message: `冰盒 ${id} 不存在。`, items: iceBoxesFile.items };
+    }
+
+    iceBoxesFile.items[index] = {
+      ...iceBoxesFile.items[index],
+      ...updates,
+      id,
+      updatedAt: syncedAt,
+    };
+    iceBoxesFile.updatedAt = syncedAt;
+
+    await writeTextFile(fs.promises, `${dir}/${iceBoxesFileName}`, serializeJson(iceBoxesFile));
+    const { commit } = await commitAndPushIceBoxesFile(fs, dir, onAuth, branchExists, `Update ice box: ${id}`);
+
+    return {
+      ok: true,
+      syncedAt,
+      message: `冰盒 ${id} 已更新到远端。`,
+      items: iceBoxesFile.items,
+      item: iceBoxesFile.items[index],
+      commit,
+    };
+  } catch (error) {
+    const classified = classifyGitError(config.repository, error);
+    return { ok: false, syncedAt, message: classified.message, details: classified.details };
+  }
+}
+
+export async function deleteIceBox(input: GitRepositoryConfig, id: string): Promise<IceBoxSyncResult> {
+  return updateIceBox(input, id, {
+    deletedAt: new Date().toISOString(),
+  });
+}
+
+export async function syncIceBoxBranch(
+  input: GitRepositoryConfig,
+  iceBoxId: string,
+): Promise<IceBoxBranchSyncResult> {
+  const syncedAt = new Date().toISOString();
+  const result = await updateIceBox(input, iceBoxId, {
+    syncStatus: "synced",
+    lastSyncAt: syncedAt,
+    lastSyncError: null,
+  });
+
+  return {
+    ...result,
+    syncedAt,
+    iceBoxId,
+  };
 }

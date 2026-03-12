@@ -223,6 +223,23 @@ export interface SyncIceBoxResult extends OperationResultFields {
   commit?: string;
 }
 
+export interface IceBoxSyncResult extends OperationResultFields {
+  ok: boolean;
+  syncedAt: string;
+  items?: IceBoxRecord[];
+  item?: IceBoxRecord;
+  commit?: string;
+}
+
+export interface IceBoxBranchSyncResult extends OperationResultFields {
+  ok: boolean;
+  syncedAt: string;
+  iceBoxId: string;
+  item?: IceBoxRecord;
+  items?: IceBoxRecord[];
+  commit?: string;
+}
+
 export interface SyncPendingIceBoxesResult extends OperationResultFields {
   ok: boolean;
   syncedAt: string;

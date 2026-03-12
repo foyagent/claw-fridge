@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createDisabledEncryptionConfig } from "@/lib/backup-encryption";
 import { readApiPayload, toOperationNotice, toRequestFailureNotice } from "@/lib/api-client";
+import { addIceBox, deleteIceBox as deleteIceBoxFromGitClient, listIceBoxes, syncIceBoxBranch, updateIceBox } from "@/lib/git-client";
 import {
   createDefaultIceBoxReminderConfig,
   normalizeIceBoxReminderConfig,
@@ -36,6 +37,24 @@ interface IceBoxesSyncResult {
   commit?: string;
   errorCode?: string;
   statusCode?: number;
+}
+
+function isCorsError(error: unknown): boolean {
+  const msg = String(error).toLowerCase();
+  return msg.includes("cors") || msg.includes("failed to fetch") || msg.includes("network request failed");
+}
+
+async function withCorsFallback<T>(frontendFn: () => Promise<T>, backendFn: () => Promise<T>): Promise<T> {
+  try {
+    return await frontendFn();
+  } catch (error) {
+    if (isCorsError(error)) {
+      console.warn("CORS detected, falling back to backend API", error);
+      return backendFn();
+    }
+
+    throw error;
+  }
 }
 
 const defaultState = {
@@ -133,6 +152,26 @@ function recordToListItem(record: IceBoxRecord): IceBoxListItem {
   });
 }
 
+function listItemToRecord(item: IceBoxListItem): IceBoxRecord {
+  return {
+    id: item.id,
+    name: item.name,
+    machineId: item.machineId,
+    branch: item.branch,
+    backupMode: item.backupMode,
+    uploadPath: item.uploadPath,
+    uploadToken: item.uploadToken,
+    reminder: item.reminder,
+    skillConfig: item.skillConfig,
+    syncStatus: item.syncStatus,
+    lastSyncAt: item.lastSyncAt,
+    lastSyncError: item.lastSyncError,
+    deletedAt: item.deletedAt,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
 function markIceBoxSyncState(
   item: IceBoxListItem,
   syncStatus: IceBoxSyncStatus,
@@ -158,20 +197,48 @@ async function syncIceBoxWithRemote(
   }
 
   try {
-    const response = await fetch(`/api/ice-boxes/${item.id}/sync`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const payload = await withCorsFallback(
+      async () => {
+        const preparedItem: IceBoxRecord = {
+          ...listItemToRecord(item),
+          syncStatus: "synced",
+          lastSyncAt: new Date().toISOString(),
+          lastSyncError: null,
+        };
+        const createResult = await addIceBox(normalizedGitConfig, preparedItem);
+
+        if (!createResult.ok && createResult.message.includes("已存在")) {
+          const syncResult = await syncIceBoxBranch(normalizedGitConfig, item.id);
+          return {
+            ok: syncResult.ok,
+            message: syncResult.message,
+            details: syncResult.details,
+            syncedAt: syncResult.syncedAt,
+            commit: syncResult.commit,
+            item: syncResult.item,
+            items: syncResult.items,
+          } satisfies IceBoxesSyncResult;
+        }
+
+        return createResult;
       },
-      body: JSON.stringify({
-        gitConfig: normalizedGitConfig,
-        item,
-      }),
-    });
+      async () => {
+        const response = await fetch(`/api/ice-boxes/${item.id}/sync`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            gitConfig: normalizedGitConfig,
+            item,
+          }),
+        });
 
-    const payload = await readApiPayload<IceBoxesSyncResult>(response);
+        return readApiPayload<IceBoxesSyncResult>(response);
+      },
+    );
 
-    if (!response.ok || !payload.ok) {
+    if (!payload.ok) {
       return {
         ok: false,
         message: payload.message || "同步冰盒到远端失败。",
@@ -224,30 +291,29 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         }
 
         try {
-          const response = await fetch("/api/ice-boxes/list", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
+          const remoteIceBoxes = await withCorsFallback(
+            () => listIceBoxes(normalizedGitConfig),
+            async () => {
+              const response = await fetch("/api/ice-boxes/list", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  gitConfig: normalizedGitConfig,
+                }),
+              });
+
+              const payload = await readApiPayload<IceBoxesSyncResult>(response);
+
+              if (!response.ok || !payload.ok) {
+                throw new Error(payload.details ?? payload.message ?? "加载冰盒列表失败。");
+              }
+
+              return (payload.items ?? []).map(recordToListItem);
             },
-            body: JSON.stringify({
-              gitConfig: normalizedGitConfig,
-            }),
-          });
+          );
 
-          const payload = await readApiPayload<IceBoxesSyncResult>(response);
-
-          if (!response.ok || !payload.ok) {
-            console.warn("Failed to load ice boxes from GitHub:", payload.message);
-            set({
-              hasLoaded: true,
-              isLoading: false,
-              error: null,
-            });
-            return;
-          }
-
-          const items = payload.items ?? [];
-          const remoteIceBoxes = items.map(recordToListItem);
           const mergedIceBoxes = new Map(remoteIceBoxes.map((item) => [item.id, item]));
 
           for (const localItem of get().iceBoxes) {
@@ -556,21 +622,26 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         if (gitConfig?.repository) {
           try {
             const normalizedGitConfig = normalizeGitConfig(gitConfig);
-            const response = await fetch(`/api/ice-boxes/${id}`, {
-              method: "PUT",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                gitConfig: normalizedGitConfig,
-                updates: {
-                  reminder: normalizedReminder,
-                  updatedAt,
-                },
-              }),
-            });
+            const payload = await withCorsFallback(
+              () => updateIceBox(normalizedGitConfig, id, { reminder: normalizedReminder, updatedAt }),
+              async () => {
+                const response = await fetch(`/api/ice-boxes/${id}`, {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    gitConfig: normalizedGitConfig,
+                    updates: {
+                      reminder: normalizedReminder,
+                      updatedAt,
+                    },
+                  }),
+                });
 
-            const payload = await readApiPayload<IceBoxesSyncResult>(response);
+                return readApiPayload<IceBoxesSyncResult>(response);
+              },
+            );
 
             set((state) => ({
               iceBoxes: state.iceBoxes.map((item) => {
@@ -578,7 +649,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
                   return item;
                 }
 
-                if (!response.ok || !payload.ok) {
+                if (!payload.ok) {
                   return markIceBoxSyncState(item, "sync-failed", item.lastSyncAt, payload.details ?? payload.message);
                 }
 
@@ -626,21 +697,26 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         if (gitConfig?.repository) {
           try {
             const normalizedGitConfig = normalizeGitConfig(gitConfig);
-            const response = await fetch(`/api/ice-boxes/${id}`, {
-              method: "PUT",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                gitConfig: normalizedGitConfig,
-                updates: {
-                  reminder: nextReminder,
-                  updatedAt,
-                },
-              }),
-            });
+            const payload = await withCorsFallback(
+              () => updateIceBox(normalizedGitConfig, id, { reminder: nextReminder, updatedAt }),
+              async () => {
+                const response = await fetch(`/api/ice-boxes/${id}`, {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    gitConfig: normalizedGitConfig,
+                    updates: {
+                      reminder: nextReminder,
+                      updatedAt,
+                    },
+                  }),
+                });
 
-            const payload = await readApiPayload<IceBoxesSyncResult>(response);
+                return readApiPayload<IceBoxesSyncResult>(response);
+              },
+            );
 
             set((state) => ({
               iceBoxes: state.iceBoxes.map((item) => {
@@ -648,7 +724,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
                   return item;
                 }
 
-                if (!response.ok || !payload.ok) {
+                if (!payload.ok) {
                   return markIceBoxSyncState(item, "sync-failed", item.lastSyncAt, payload.details ?? payload.message);
                 }
 
@@ -699,18 +775,24 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         if (gitConfig?.repository) {
           try {
             const normalizedGitConfig = normalizeGitConfig(gitConfig);
-            const response = await fetch(`/api/ice-boxes/${id}`, {
-              method: "DELETE",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                gitConfig: normalizedGitConfig,
-              }),
-            });
+            const payload = await withCorsFallback(
+              () => deleteIceBoxFromGitClient(normalizedGitConfig, id),
+              async () => {
+                const response = await fetch(`/api/ice-boxes/${id}`, {
+                  method: "DELETE",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    gitConfig: normalizedGitConfig,
+                  }),
+                });
 
-            if (!response.ok) {
-              const payload = await readApiPayload<IceBoxesSyncResult>(response);
+                return readApiPayload<IceBoxesSyncResult>(response);
+              },
+            );
+
+            if (!payload.ok) {
               console.warn("Failed to delete ice box from GitHub:", payload.message);
             }
           } catch (error) {

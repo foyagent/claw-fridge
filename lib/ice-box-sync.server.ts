@@ -1,5 +1,10 @@
 import "server-only";
 
+/**
+ * @deprecated Browser `isomorphic-git` is the primary path now.
+ * This module remains only as a CORS / network-policy fallback for `/api/ice-boxes/*`.
+ */
+
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
