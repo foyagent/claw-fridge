@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
 import { useMounted } from "@/hooks/use-mounted";
 import { isEncryptionEnabled } from "@/lib/backup-encryption";
-import { getIceBoxHistory } from "@/lib/git-client";
+import { getIceBoxHistory, shouldFallbackToServer } from "@/lib/git-client";
 import {
   calculateIceBoxReminderSnapshot,
   getIceBoxReminderPresetMeta,
