@@ -94,24 +94,24 @@ function formatCommit(commit: string | null | undefined) {
   return commit.slice(0, 8);
 }
 
-function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorBanner({ message, onRetry, t }: { message: string; onRetry: () => void; t: ReturnType<typeof useTranslations> }) {
   return (
     <div className="fridge-state fridge-state--error flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p className="font-medium">冰盒详情加载失败</p>
+        <p className="font-medium">{t("detail.loadFailed")}</p>
         <p className="mt-1 opacity-90">{message}</p>
       </div>
       <button type="button" onClick={onRetry} className="fridge-button-secondary">
-        重试加载
+        {t("detail.retryLoad")}
       </button>
     </div>
   );
 }
 
-function ResultDetails({ details }: { details: string }) {
+function ResultDetails({ details, t }: { details: string; t: ReturnType<typeof useTranslations> }) {
   return (
     <details className="mt-3 rounded-xl bg-black/5 p-3 text-xs leading-5 text-current dark:bg-black/20">
-      <summary className="cursor-pointer font-medium">查看细节</summary>
+      <summary className="cursor-pointer font-medium">{t("common.viewDetails")}</summary>
       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{details}</pre>
     </details>
   );
@@ -122,11 +122,13 @@ function CopyableCodeBlock({
   value,
   copied,
   onCopy,
+  t,
 }: {
   label: string;
   value: string;
   copied: boolean;
   onCopy: () => void;
+  t: ReturnType<typeof useTranslations>;
 }) {
   return (
     <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
@@ -137,7 +139,7 @@ function CopyableCodeBlock({
           onClick={onCopy}
           className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
         >
-          {copied ? "已复制" : "复制"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
       <pre className="mt-3 max-h-32 overflow-auto break-all rounded-2xl bg-zinc-50 p-3 font-mono text-xs whitespace-pre-wrap text-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-200">
@@ -360,15 +362,15 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     }
 
     if (!restoreTargetRootDir.trim()) {
-      return "先填写恢复目标目录，实际写入会固定收口到该目录下的 `.openclaw`。";
+      return t("detail.restoreNeedTarget");
     }
 
     if (!confirmRestore) {
-      return "勾选恢复确认后，才能真正执行恢复。";
+      return t("detail.restoreNeedConfirm");
     }
 
     if (shouldConfirmOverwrite && !replaceExistingRestoreTarget) {
-      return "检测到目标目录里已经有 `.openclaw`，请确认允许先备份旧目录再覆盖恢复。";
+      return t("detail.restoreNeedOverwrite");
     }
 
     return null;
@@ -407,7 +409,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       setHasDeleted(true);
       router.replace(embedded ? "/" : "/");
     } catch (actionError) {
-      setDeleteError(actionError instanceof Error ? actionError.message : "删除冰盒失败，请稍后重试。");
+      setDeleteError(actionError instanceof Error ? actionError.message : t("detail.deleteFailed"));
       setIsDeleting(false);
       return;
     }
@@ -439,7 +441,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     setHistoryError(null);
 
     if (shouldShowSilentRefresh) {
-      startSilentRefresh("备份历史");
+      startSilentRefresh(t("detail.history"));
     }
 
     try {
@@ -471,7 +473,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           const result = await readApiPayload<IceBoxHistoryResult>(response);
 
           if (!response.ok || !result.ok) {
-            setHistoryError(toOperationNotice(result, "读取备份历史失败。"));
+            setHistoryError(toOperationNotice(result, t("detail.historyLoadFailed")));
             setHistoryViewState("error");
             setHasLoadedHistory(true);
             return;
@@ -503,13 +505,13 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       });
     } catch (actionError) {
       setHistoryViewState("error");
-      setHistoryError(toRequestFailureNotice("读取备份历史时", actionError));
+      setHistoryError(toRequestFailureNotice(t("detail.historyLoadingWhile"), actionError));
       setHasLoadedHistory(true);
     } finally {
       historyRequestKeyRef.current = null;
       setIsLoadingHistory(false);
       if (shouldShowSilentRefresh) {
-        finishSilentRefresh("备份历史");
+        finishSilentRefresh(t("detail.history"));
       }
     }
   }, [finishSilentRefresh, gitConfig, startSilentRefresh, syncIceBoxBackupState]);
@@ -571,7 +573,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
       if (!response.ok || !result.ok) {
         setRestorePreview(null);
-        setRestoreError(toOperationNotice(result, "恢复预览失败。"));
+        setRestoreError(toOperationNotice(result, t("detail.restorePreviewFailed")));
         return;
       }
 
@@ -579,7 +581,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       setReplaceExistingRestoreTarget(Boolean(result.targetExists));
     } catch (actionError) {
       setRestorePreview(null);
-      setRestoreError(toRequestFailureNotice("加载恢复预览时", actionError));
+      setRestoreError(toRequestFailureNotice(t("detail.restorePreviewWhile"), actionError));
     } finally {
       setIsPreviewingRestore(false);
     }
@@ -617,7 +619,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       setRestoreResult(result);
 
       if (!response.ok || !result.ok) {
-        setRestoreError(toOperationNotice(result, "恢复备份失败。"));
+        setRestoreError(toOperationNotice(result, t("detail.restoreFailed")));
         return;
       }
 
@@ -626,7 +628,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       syncIceBoxBackupState(iceBox.id, result.lastBackupAt ?? iceBox.lastBackupAt);
     } catch (actionError) {
       setRestoreResult(null);
-      setRestoreError(toRequestFailureNotice("执行恢复时", actionError));
+      setRestoreError(toRequestFailureNotice(t("detail.restoreWhile"), actionError));
     } finally {
       setIsRestoring(false);
     }
@@ -672,7 +674,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
     updateIceBoxReminder(iceBox.id, nextReminder, gitConfig);
     setReminderDraft(nextReminder);
-    setReminderNotice("提醒配置已保存。下次提醒时间和状态已同步刷新。");
+    setReminderNotice(t("detail.reminderSaved"));
   }
 
   function handleReminderReset() {
@@ -681,7 +683,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     }
 
     resetIceBoxReminder(iceBox.id, gitConfig);
-    setReminderNotice("提醒配置已恢复为默认每周提醒。");
+    setReminderNotice(t("detail.reminderReset"));
   }
 
   if (!mounted || (isLoading && !hasLoaded && !hasCachedIceBox)) {
@@ -705,7 +707,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
   if (!iceBox && error) {
     return (
       <section className="grid gap-5 rounded-[28px] border border-black/10 bg-white/90 p-8 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-white/5">
-        <ErrorBanner message={error} onRetry={() => void handleRetry()} />
+        <ErrorBanner message={error} onRetry={() => void handleRetry()} t={t} />
         <div className="flex flex-wrap items-center gap-3">
           <Link
             href="/"
@@ -735,7 +737,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             href="/"
             className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
           >
-            返回冰盒列表
+            {t("common.backToList")}
           </Link>
         </div>
       </section>
@@ -827,7 +829,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           <div className="flex flex-wrap items-center gap-3">
             {!embedded ? (
               <Link href="/" className="fridge-button-ghost px-0 py-0">
-                ← 返回冰盒列表
+                ← {t("common.backToList")}
               </Link>
             ) : null}
             {headerChips.map((chip) => (
@@ -858,7 +860,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         </div>
       </div>
 
-      {error ? <ErrorBanner message={error} onRetry={() => void handleRetry()} /> : null}
+      {error ? <ErrorBanner message={error} onRetry={() => void handleRetry()} t={t} /> : null}
 
       {iceBox.syncStatus !== "synced" ? (
         <div className="fridge-state fridge-state--warning grid gap-3">
@@ -868,17 +870,17 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               <p className="mt-1 opacity-90">{syncMeta.description}</p>
             </div>
             <button type="button" onClick={() => void handleSyncToRemote()} className="fridge-button-secondary" disabled={isSyncingToRemote}>
-              {isSyncingToRemote ? "正在同步到远端..." : "立即同步到远端"}
+              {isSyncingToRemote ? t("detail.syncing") : t("detail.syncNow")}
             </button>
           </div>
-          {iceBox.lastSyncError ? <ResultDetails details={iceBox.lastSyncError} /> : null}
+          {iceBox.lastSyncError ? <ResultDetails details={iceBox.lastSyncError} t={t} /> : null}
         </div>
       ) : null}
 
       {syncNotice ? (
         <div className={`fridge-state ${syncNotice.tone === "success" ? "fridge-state--success" : "fridge-state--warning"}`}>
           <p className="font-medium">{syncNotice.message}</p>
-          {syncNotice.details ? <ResultDetails details={syncNotice.details} /> : null}
+          {syncNotice.details ? <ResultDetails details={syncNotice.details} t={t} /> : null}
         </div>
       ) : null}
 
@@ -918,25 +920,25 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               <>
                 <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5 sm:col-span-2">
                   <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.uploadUrl")}</dt>
-                  <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{uploadUrl ?? "未生成"}</dd>
+                  <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{uploadUrl ?? t("common.notGenerated")}</dd>
                 </div>
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">上传 Token</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">{t("detail.uploadToken")}</dt>
                   <dd className="mt-2 break-all font-mono text-xs text-amber-900 dark:text-amber-100">{iceBox.skillConfig.uploadToken}</dd>
                 </div>
                 <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">加密信息</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.encryptionInfo")}</dt>
                   <dd className="mt-2 text-sm text-zinc-900 dark:text-zinc-100">
-                    {encryptionEnabled ? "已启用 AES-256-GCM / PBKDF2-SHA256" : "未启用"}
+                    {encryptionEnabled ? t("detail.encryptionEnabled") : t("common.disabled")}
                   </dd>
                   {encryptionEnabled ? (
                     <>
                       <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                        KDF：{iceBox.skillConfig.encryption.kdf} / {iceBox.skillConfig.encryption.kdfIterations.toLocaleString("zh-CN")} 次
+                        {t("detail.kdfLabel")}{iceBox.skillConfig.encryption.kdf} / {iceBox.skillConfig.encryption.kdfIterations.toLocaleString("zh-CN")} {t("detail.iterationsUnit")}
                       </dd>
-                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">Salt：{iceBox.skillConfig.encryption.kdfSalt}</dd>
+                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">{t("detail.saltLabel")}{iceBox.skillConfig.encryption.kdfSalt}</dd>
                       {iceBox.skillConfig.encryption.keyHint ? (
-                        <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">密钥提示：{iceBox.skillConfig.encryption.keyHint}</dd>
+                        <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">{t("detail.keyHintLabel")}{iceBox.skillConfig.encryption.keyHint}</dd>
                       ) : null}
                     </>
                   ) : null}
@@ -945,15 +947,15 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             ) : (
               <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
                 <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.uploadEncryption")}</dt>
-                <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">未启用</dd>
+                <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{t("common.disabled")}</dd>
               </div>
             )}
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">远端同步状态</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.remoteSyncStatus")}</dt>
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{syncMeta.label}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">最近同步时间</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.lastRemoteSync")}</dt>
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt)}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
@@ -970,7 +972,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
           <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.status")}</h2>
           <div className="rounded-[24px] bg-white p-5 dark:bg-white/5">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">最后备份时间</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("detail.lastBackupTime")}</p>
             <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
               {formatLastBackupTime(effectiveLastBackupAt)}
             </p>
@@ -978,7 +980,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           <div className="grid gap-3 rounded-[24px] border border-zinc-200/80 bg-white p-4 dark:border-white/10 dark:bg-white/5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">定时备份提醒</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("detail.scheduledReminder")}</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">{reminderSnapshot.statusLabel}</p>
               </div>
               <span
@@ -990,11 +992,11 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">{reminderSnapshot.statusDescription}</p>
             <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
               <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提醒配置</dt>
+                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.reminderConfig")}</dt>
                 <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{reminderSnapshot.configLabel}</dd>
               </div>
               <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">下次提醒</dt>
+                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.nextReminder")}</dt>
                 <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
                   {formatDateTime(reminderSnapshot.nextReminderAt)}
                 </dd>
@@ -1005,7 +1007,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 p-5 text-sm leading-6 text-zinc-500 dark:border-white/10 dark:text-zinc-400">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-medium text-zinc-900 dark:text-zinc-100">提醒配置</p>
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">{t("detail.reminderConfig")}</p>
               </div>
               <label className="inline-flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
                 <input
@@ -1024,26 +1026,26 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                   }}
                   className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
                 />
-                启用提醒
+                {t("detail.enableReminder")}
               </label>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提醒节奏</span>
+                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.reminderCadence")}</span>
                 <select
                   value={effectiveReminder.preset}
                   onChange={(event) => handleReminderPresetChange(event.target.value as IceBoxReminderPreset)}
                   className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
                 >
-                  <option value="daily">每天一次</option>
-                  <option value="every-3-days">每 3 天一次</option>
-                  <option value="weekly">每周一次</option>
-                  <option value="custom">自定义间隔</option>
+                  <option value="daily">{t("detail.reminderPresetDaily")}</option>
+                  <option value="every-3-days">{t("detail.reminderPresetEvery3Days")}</option>
+                  <option value="weekly">{t("detail.reminderPresetWeekly")}</option>
+                  <option value="custom">{t("detail.reminderPresetCustom")}</option>
                 </select>
               </label>
               <label className="grid gap-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">缓冲窗口（小时）</span>
+                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.graceWindowHours")}</span>
                 <input
                   type="number"
                   min={1}
@@ -1067,7 +1069,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
             {effectiveReminder.preset === "custom" ? (
               <label className="grid gap-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">自定义提醒间隔（小时）</span>
+                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.customReminderIntervalHours")}</span>
                 <input
                   type="number"
                   min={1}
@@ -1089,7 +1091,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               </label>
             ) : (
               <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-950/50 dark:text-zinc-300">
-                当前选择：{getIceBoxReminderPresetMeta(effectiveReminder.preset).label}，默认间隔 {effectiveReminder.intervalHours} 小时。
+                {t("detail.reminderCurrentSelection", { label: getIceBoxReminderPresetMeta(effectiveReminder.preset).label, hours: effectiveReminder.intervalHours })}
               </div>
             )}
 
@@ -1105,14 +1107,14 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 onClick={handleReminderSave}
                 className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
               >
-                保存提醒配置
+                {t("detail.saveReminderConfig")}
               </button>
               <button
                 type="button"
                 onClick={handleReminderReset}
                 className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
               >
-                重置为默认
+                {t("detail.resetToDefault")}
               </button>
             </div>
 
@@ -1122,7 +1124,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
       <div className="grid gap-4">
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">Skill 文档</h2>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.skillDocument")}</h2>
           <div className="rounded-[24px] bg-white p-5 text-sm leading-6 text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
             <p className="font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</p>
             <p className="mt-2">{backupModeMeta.description}</p>
@@ -1133,7 +1135,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 onChange={(event) => setIncludeGitCredentialsInSkill(event.target.checked)}
                 className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
               />
-              安装 Skill 时携带 Git 凭证占位符
+              {t("detail.includeGitCredentialPlaceholders")}
             </label>
             <div className="mt-4 grid gap-4 rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 dark:border-white/10 dark:bg-zinc-950/40">
               <label className="inline-flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
@@ -1148,13 +1150,13 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                   }
                   className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
                 />
-                定时备份
+                {t("detail.scheduledBackup")}
               </label>
               {scheduledBackupInSkill.enabled ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="grid gap-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">定时类型</span>
+                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.scheduleType")}</span>
                       <select
                         value={scheduledBackupInSkill.preset}
                         onChange={(event) =>
@@ -1167,14 +1169,14 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                         }
                         className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
                       >
-                        <option value="daily">每天</option>
-                        <option value="weekly">每周</option>
-                        <option value="monthly">每月</option>
-                        <option value="custom-cron">自定义 Cron</option>
+                        <option value="daily">{t("detail.schedulePresetDaily")}</option>
+                        <option value="weekly">{t("detail.schedulePresetWeekly")}</option>
+                        <option value="monthly">{t("detail.schedulePresetMonthly")}</option>
+                        <option value="custom-cron">{t("detail.schedulePresetCustomCron")}</option>
                       </select>
                     </label>
                     <label className="grid gap-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">时区</span>
+                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.timezone")}</span>
                       <input
                         type="text"
                         value={scheduledBackupInSkill.timezone}
@@ -1184,14 +1186,14 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                             timezone: event.target.value,
                           }))
                         }
-                        placeholder="例如 Asia/Shanghai"
+                        placeholder={t("detail.timezonePlaceholder")}
                         className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
                       />
                     </label>
                   </div>
                   {scheduledBackupInSkill.preset === "custom-cron" ? (
                     <label className="grid gap-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Cron 表达式</span>
+                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.cronExpression")}</span>
                       <input
                         type="text"
                         value={scheduledBackupInSkill.cronExpression}
@@ -1201,14 +1203,14 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                             cronExpression: event.target.value,
                           }))
                         }
-                        placeholder="例如 0 3 * * *"
+                        placeholder={t("detail.cronPlaceholder")}
                         className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
                       />
                     </label>
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-3">
                       <label className="grid gap-2">
-                        <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">执行时间</span>
+                        <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.executionTime")}</span>
                         <input
                           type="time"
                           value={scheduledBackupInSkill.time}
@@ -1223,7 +1225,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                       </label>
                       {scheduledBackupInSkill.preset === "weekly" ? (
                         <label className="grid gap-2">
-                          <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">每周几</span>
+                          <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.dayOfWeek")}</span>
                           <select
                             value={scheduledBackupInSkill.dayOfWeek}
                             onChange={(event) =>
@@ -1234,19 +1236,19 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                             }
                             className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
                           >
-                            <option value={1}>周一</option>
-                            <option value={2}>周二</option>
-                            <option value={3}>周三</option>
-                            <option value={4}>周四</option>
-                            <option value={5}>周五</option>
-                            <option value={6}>周六</option>
-                            <option value={7}>周日</option>
+                            <option value={1}>{t("detail.weekday1")}</option>
+                            <option value={2}>{t("detail.weekday2")}</option>
+                            <option value={3}>{t("detail.weekday3")}</option>
+                            <option value={4}>{t("detail.weekday4")}</option>
+                            <option value={5}>{t("detail.weekday5")}</option>
+                            <option value={6}>{t("detail.weekday6")}</option>
+                            <option value={7}>{t("detail.weekday7")}</option>
                           </select>
                         </label>
                       ) : null}
                       {scheduledBackupInSkill.preset === "monthly" ? (
                         <label className="grid gap-2">
-                          <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">每月几号</span>
+                          <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.dayOfMonth")}</span>
                           <input
                             type="number"
                             min={1}
@@ -1265,11 +1267,11 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                     </div>
                   )}
                   <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-950/50 dark:text-zinc-300">
-                    当前定时策略：{buildScheduledBackupDescription(scheduledBackupInSkill)}
+                    {t("detail.currentSchedulePolicy", { description: buildScheduledBackupDescription(scheduledBackupInSkill) })}
                   </div>
                 </>
               ) : (
-                <p className="text-sm leading-6 text-zinc-500 dark:text-zinc-400">未预设定时备份。</p>
+                <p className="text-sm leading-6 text-zinc-500 dark:text-zinc-400">{t("detail.noScheduledBackupPreset")}</p>
               )}
             </div>
             <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -1277,34 +1279,37 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 href={skillLink}
                 className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
               >
-                打开备份 Skill
+                {t("detail.openBackupSkill")}
               </Link>
               <Link
                 href={restoreSkillLink}
                 className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
               >
-                打开恢复 Skill
+                {t("detail.openRestoreSkill")}
               </Link>
             </div>
           </div>
           <div className="grid gap-3 rounded-[24px] border border-dashed border-zinc-300 p-5 text-sm leading-6 text-zinc-500 dark:border-white/10 dark:text-zinc-400">
             <CopyableCodeBlock
-              label="备份 Skill 链接"
+              label={t("detail.backupSkillLink")}
               value={skillLink}
               copied={copiedField === "skill"}
               onCopy={() => void handleCopy(skillLink, "skill")}
+              t={t}
             />
             <CopyableCodeBlock
-              label="恢复 Skill 链接"
+              label={t("detail.restoreSkillLink")}
               value={restoreSkillLink}
               copied={copiedField === "restore-skill"}
               onCopy={() => void handleCopy(restoreSkillLink, "restore-skill")}
+              t={t}
             />
             <CopyableCodeBlock
-              label="新机器一键恢复命令"
+              label={t("detail.recoveryCommand")}
               value={recoveryCommand}
               copied={copiedField === "recovery-command"}
               onCopy={() => void handleCopy(recoveryCommand, "recovery-command")}
+              t={t}
             />
             {copiedField ? (
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
@@ -1332,23 +1337,23 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             disabled={!hasConfiguredRepository || isLoadingHistory}
             className="inline-flex items-center justify-center rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
           >
-            {isLoadingHistory ? "正在刷新..." : "刷新历史"}
+            {isLoadingHistory ? t("detail.refreshing") : t("detail.refreshHistory")}
           </button>
         </div>
 
         {!hasConfiguredRepository ? (
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-            <p className="font-medium">还没配置 Git 仓库</p>
-            <p className="mt-1 opacity-90">先回首页保存并测试仓库连接，备份历史才能从远端仓库读取。</p>
+            <p className="font-medium">{t("detail.gitRepoNotConfigured")}</p>
+            <p className="mt-1 opacity-90">{t("detail.historyNeedGit")}</p>
           </div>
         ) : null}
 
         {historyError && historyEntries.length === 0 && historyViewState === "error" ? (
           <div className="flex flex-col gap-3 rounded-3xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-medium">备份历史加载失败</p>
+              <p className="font-medium">{t("detail.historyLoadFailed")}</p>
               <p className="mt-1 opacity-90">{historyError.message}</p>
-              {historyError.details ? <ResultDetails details={historyError.details} /> : null}
+              {historyError.details ? <ResultDetails details={historyError.details} t={t} /> : null}
             </div>
             <button
               type="button"
@@ -1361,15 +1366,15 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               }}
               className="rounded-full border border-rose-500/20 bg-white/70 px-4 py-2 font-medium transition hover:bg-white dark:bg-black/10 dark:hover:bg-black/20"
             >
-              重试加载
+              {t("detail.retryLoad")}
             </button>
           </div>
         ) : null}
 
         {historyError && historyEntries.length > 0 ? (
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-            <p className="font-medium">已展示上次缓存的历史记录</p>
-            <p className="mt-1 opacity-90">后台刷新这次没成功，你先用旧记录顶着，稍后再试。</p>
+            <p className="font-medium">{t("detail.showingCachedHistory")}</p>
+            <p className="mt-1 opacity-90">{t("detail.cachedHistoryDescription")}</p>
           </div>
         ) : null}
 
@@ -1399,9 +1404,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               🧊
             </div>
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">这个冰盒还没有备份历史</h3>
+              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.noHistoryTitle")}</h3>
               <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                完成首次备份后会在这里显示，当前还没有创建出对应的远端备份分支。
+                {t("detail.noHistoryBranchDescription")}
               </p>
             </div>
           </div>
@@ -1413,9 +1418,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               📭
             </div>
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">这个冰盒还没有备份历史</h3>
+              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.noHistoryTitle")}</h3>
               <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                远端分支已经对上了，但还没扫到 commit。等第一次备份落到仓库后，这里就会显示历史列表。
+                {t("detail.noHistoryReadyDescription")}
               </p>
             </div>
           </div>
@@ -1445,7 +1450,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                         </span>
                         {isSelected ? (
                           <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
-                            已选中恢复
+                            {t("detail.selectedForRestore")}
                           </span>
                         ) : null}
                       </div>
@@ -1457,26 +1462,26 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                         onClick={() => handleSelectHistoryEntry(entry)}
                         className="inline-flex items-center justify-center rounded-full border border-sky-500/30 bg-white px-4 py-2 text-sm font-medium text-sky-700 transition hover:border-sky-500 hover:bg-sky-500/5 dark:bg-black/10 dark:text-sky-300 dark:hover:bg-sky-500/10"
                       >
-                        恢复这个版本
+                        {t("detail.restoreThisVersion")}
                       </button>
                     </div>
                   </div>
 
                   <dl className="mt-4 grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提交时间</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.commitTime")}</dt>
                       <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(entry.committedAt)}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">提交人</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.commitAuthor")}</dt>
                       <dd className="mt-2 text-zinc-900 dark:text-zinc-100">{entry.authorName}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Commit Hash</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.commitHash")}</dt>
                       <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{entry.commit}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">邮箱</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.email")}</dt>
                       <dd className="mt-2 break-all text-zinc-900 dark:text-zinc-100">{entry.authorEmail ?? "--"}</dd>
                     </div>
                   </dl>
@@ -1491,35 +1496,35 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">
-              Restore
+              {t("detail.restoreBadge")}
             </span>
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">把选中的 `.openclaw` 快照恢复到当前机器指定目录</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">{t("detail.restorePanelBadgeDescription")}</span>
           </div>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">恢复冰盒备份</h2>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.restoreIceBoxBackup")}</h2>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            这不是说明卡片，是真的本机恢复入口：会从仓库读取所选快照，并写回目标目录下的 `.openclaw`。
+            {t("detail.restoreDescription")}
           </p>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="fridge-step-card">
               <div className="mb-2 flex items-center gap-3">
                 <span className="fridge-step-number">1</span>
-                <p className="font-semibold text-zinc-950 dark:text-zinc-50">先选快照</p>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.restoreStep1Title")}</p>
               </div>
-              <p className="text-zinc-600 dark:text-zinc-300">从“备份历史”里点选需要恢复的版本。</p>
+              <p className="text-zinc-600 dark:text-zinc-300">{t("detail.restoreStep1Description")}</p>
             </div>
             <div className="fridge-step-card">
               <div className="mb-2 flex items-center gap-3">
                 <span className="fridge-step-number">2</span>
-                <p className="font-semibold text-zinc-950 dark:text-zinc-50">再看预览</p>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.restoreStep2Title")}</p>
               </div>
-              <p className="text-zinc-600 dark:text-zinc-300">确认目标目录、目标提交和覆盖前备份路径。</p>
+              <p className="text-zinc-600 dark:text-zinc-300">{t("detail.restoreStep2Description")}</p>
             </div>
             <div className="fridge-step-card">
               <div className="mb-2 flex items-center gap-3">
                 <span className="fridge-step-number">3</span>
-                <p className="font-semibold text-zinc-950 dark:text-zinc-50">最后执行恢复</p>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.restoreStep3Title")}</p>
               </div>
-              <p className="text-zinc-600 dark:text-zinc-300">勾选确认后再执行，避免把错误快照恢复到错误目录。</p>
+              <p className="text-zinc-600 dark:text-zinc-300">{t("detail.restoreStep3Description")}</p>
             </div>
           </div>
         </div>
@@ -1527,9 +1532,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         {selectedHistoryEntry ? (
           <div className="flex flex-col gap-3 rounded-3xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-900 dark:text-sky-100 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-medium">当前将恢复历史版本 {formatCommit(selectedHistoryEntry.commit)}</p>
+              <p className="font-medium">{t("detail.restoringHistoryVersion", { commit: formatCommit(selectedHistoryEntry.commit) })}</p>
               <p className="mt-1 opacity-90">
-                {formatDateTime(selectedHistoryEntry.committedAt)} · {selectedHistoryEntry.authorName} · {selectedHistoryEntry.summary}
+                {t("detail.restoreHistoryVersionMeta", { time: formatDateTime(selectedHistoryEntry.committedAt), author: selectedHistoryEntry.authorName, summary: selectedHistoryEntry.summary })}
               </p>
             </div>
             <button
@@ -1542,7 +1547,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               }}
               className="rounded-full border border-sky-500/20 bg-white/70 px-4 py-2 font-medium transition hover:bg-white dark:bg-black/10 dark:hover:bg-black/20"
             >
-              改回最新快照
+              {t("detail.switchToLatestSnapshot")}
             </button>
           </div>
         ) : null}
@@ -1550,7 +1555,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         <div className="grid gap-4 rounded-[24px] bg-white/80 p-4 text-sm text-zinc-600 dark:bg-black/10 dark:text-zinc-300 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="grid gap-3">
             <label className="grid gap-2">
-              <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">恢复目标目录</span>
+              <span className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.restoreTargetDirectory")}</span>
               <input
                 type="text"
                 value={restoreTargetRootDir}
@@ -1560,21 +1565,21 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                   setRestoreResult(null);
                   setRestoreError(null);
                 }}
-                placeholder="例如 /Users/claw"
+                placeholder={t("detail.restoreTargetPlaceholder")}
                 className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100"
               />
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">恢复来源</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.restoreSource")}</p>
                 <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
                   {selectedHistoryEntry
-                    ? `${backupModeMeta.label} → 历史快照 ${formatCommit(selectedHistoryEntry.commit)}`
-                    : `${backupModeMeta.label} → Git 分支最新快照`}
+                    ? t("detail.restoreSourceHistory", { mode: backupModeMeta.label, commit: formatCommit(selectedHistoryEntry.commit) })
+                    : t("detail.restoreSourceLatest", { mode: backupModeMeta.label })}
                 </p>
               </div>
               <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">目标分支</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.targetBranch")}</p>
                 <p className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.branch}</p>
               </div>
             </div>
@@ -1583,8 +1588,8 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           <div className="grid gap-3 rounded-[20px] border border-dashed border-sky-500/20 p-4">
             {!hasConfiguredRepository ? (
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-                <p className="font-medium">还没配置 Git 仓库</p>
-                <p className="mt-1 opacity-90">先回首页保存并测试仓库连接，恢复接口才能知道该去哪里拉取备份。</p>
+                <p className="font-medium">{t("detail.gitRepoNotConfigured")}</p>
+                <p className="mt-1 opacity-90">{t("detail.restoreNeedGit")}</p>
               </div>
             ) : null}
             <div className="flex flex-wrap items-center gap-3">
@@ -1594,7 +1599,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 disabled={!hasConfiguredRepository || isPreviewingRestore || isRestoring}
                 className="inline-flex items-center justify-center rounded-full border border-sky-500/30 bg-white px-5 py-2.5 text-sm font-medium text-sky-700 transition hover:border-sky-500 hover:bg-sky-500/5 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-black/10 dark:text-sky-300 dark:hover:bg-sky-500/10"
               >
-                {isPreviewingRestore ? "正在预览..." : "查看恢复预览"}
+                {isPreviewingRestore ? t("detail.previewing") : t("detail.viewRestorePreview")}
               </button>
               <button
                 type="button"
@@ -1602,7 +1607,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 disabled={!canExecuteRestore}
                 className="inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isRestoring ? "正在恢复..." : "执行恢复"}
+                {isRestoring ? t("detail.restoring") : t("detail.executeRestore")}
               </button>
             </div>
             <label className="flex items-start gap-3 rounded-2xl bg-white px-4 py-3 text-sm text-zinc-700 dark:bg-white/5 dark:text-zinc-200">
@@ -1613,7 +1618,11 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 className="mt-1 h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
               />
               <span>
-                我确认把{selectedHistoryEntry ? `历史快照 ${formatCommit(selectedHistoryEntry.commit)}` : "该分支中的最新快照"}里的 `.openclaw` 恢复到上面的目标目录。
+                {t("detail.confirmRestoreText", {
+                  source: selectedHistoryEntry
+                    ? t("detail.historySnapshotWithCommit", { commit: formatCommit(selectedHistoryEntry.commit) })
+                    : t("detail.latestSnapshotInBranch"),
+                })}
               </span>
             </label>
             {shouldConfirmOverwrite ? (
@@ -1624,7 +1633,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                   onChange={(event) => setReplaceExistingRestoreTarget(event.target.checked)}
                   className="mt-1 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
                 />
-                <span>目标目录里如果已经有 `.openclaw`，允许先备份旧目录再覆盖恢复。</span>
+                <span>{t("detail.overwriteConfirmation")}</span>
               </label>
             ) : null}
             {restoreHint ? (
@@ -1637,42 +1646,42 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
         {restoreError ? (
           <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
-            <p className="font-medium">恢复失败</p>
+            <p className="font-medium">{t("detail.restoreFailedTitle")}</p>
             <p className="mt-1 opacity-90">{restoreError.message}</p>
-            {restoreError.details ? <ResultDetails details={restoreError.details} /> : null}
+            {restoreError.details ? <ResultDetails details={restoreError.details} t={t} /> : null}
           </div>
         ) : null}
 
         {restorePreview ? (
           <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
             <div className="rounded-[24px] bg-white/80 p-4 dark:bg-black/10">
-              <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">当前恢复预览</h3>
+              <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.currentRestorePreview")}</h3>
               <dl className="mt-3 grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
                 <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">分支</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.branch")}</dt>
                   <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{restorePreview.selectedBranch?.branch ?? iceBox.branch}</dd>
                 </div>
                 <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">目标快照</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.targetSnapshot")}</dt>
                   <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
                     {restorePreview.selectedBranch?.lastBackupAt
                       ? formatDateTime(restorePreview.selectedBranch.lastBackupAt)
-                      : "当前还没有可恢复快照"}
+                      : t("detail.noRestorableSnapshot")}
                   </dd>
                 </div>
                 <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">目标提交</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.targetCommit")}</dt>
                   <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{formatCommit(restorePreview.selectedBranch?.lastCommit)}</dd>
                 </div>
                 <div className="rounded-2xl bg-sky-500/5 px-4 py-3">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">恢复路径</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.restorePath")}</dt>
                   <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
-                    {restorePreview.restoredPath ?? "等待填写目标目录后生成"}
+                    {restorePreview.restoredPath ?? t("detail.awaitingRestorePath")}
                   </dd>
                 </div>
                 {restorePreview.overwriteBackupPath ? (
                   <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
-                    <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">覆盖前备份</dt>
+                    <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">{t("detail.preOverwriteBackup")}</dt>
                     <dd className="mt-2 break-all font-mono text-xs text-amber-900 dark:text-amber-100">{restorePreview.overwriteBackupPath}</dd>
                   </div>
                 ) : null}
@@ -1680,7 +1689,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             </div>
 
             <div className="rounded-[24px] bg-white/80 p-4 dark:bg-black/10">
-              <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">仓库里可恢复的分支</h3>
+              <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.restorableBranches")}</h3>
               <div className="mt-3 grid gap-3">
                 {restorePreview.availableBranches?.length ? (
                   restorePreview.availableBranches.slice(0, 6).map((branchPreview) => (
@@ -1688,18 +1697,18 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <p className="font-mono text-xs text-zinc-900 dark:text-zinc-100">{branchPreview.branch}</p>
                         <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
-                          {branchPreview.exists ? "可恢复" : "无快照"}
+                          {branchPreview.exists ? t("detail.restorable") : t("detail.noSnapshot")}
                         </span>
                       </div>
                       <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {branchPreview.lastBackupAt ? formatDateTime(branchPreview.lastBackupAt) : "暂无最近备份时间"}
+                        {branchPreview.lastBackupAt ? formatDateTime(branchPreview.lastBackupAt) : t("detail.noRecentBackupTime")}
                       </p>
-                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{branchPreview.summary ?? "暂无提交说明"}</p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{branchPreview.summary ?? t("detail.noCommitSummary")}</p>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-zinc-300 px-4 py-5 text-sm text-zinc-500 dark:border-white/10 dark:text-zinc-400">
-                    当前仓库里还没扫到任何 `ice-box/...` 可恢复分支。
+                    {t("detail.noRestorableBranches")}
                   </div>
                 )}
               </div>
@@ -1709,13 +1718,13 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
         {restoreResult?.ok ? (
           <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
-            <p className="font-medium">恢复完成</p>
+            <p className="font-medium">{t("detail.restoreCompleted")}</p>
             <p className="mt-1 opacity-90">{restoreResult.message}</p>
             <div className="mt-3 grid gap-2 text-xs">
-              <p>恢复分支：<span className="font-mono">{restoreResult.branch}</span></p>
-              <p>恢复路径：<span className="font-mono">{restoreResult.restoredPath}</span></p>
-              {restoreResult.previousPathBackup ? <p>旧目录备份：<span className="font-mono">{restoreResult.previousPathBackup}</span></p> : null}
-              {restoreResult.commit ? <p>快照提交：<span className="font-mono">{formatCommit(restoreResult.commit)}</span></p> : null}
+              <p>{t("detail.restoredBranch")}<span className="font-mono">{restoreResult.branch}</span></p>
+              <p>{t("detail.restoredPath")}<span className="font-mono">{restoreResult.restoredPath}</span></p>
+              {restoreResult.previousPathBackup ? <p>{t("detail.previousBackupPath")}<span className="font-mono">{restoreResult.previousPathBackup}</span></p> : null}
+              {restoreResult.commit ? <p>{t("detail.snapshotCommit")}<span className="font-mono">{formatCommit(restoreResult.commit)}</span></p> : null}
             </div>
           </div>
         ) : null}
@@ -1725,27 +1734,27 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-rose-700 dark:text-rose-300">
-              Danger Zone
+              {t("detail.dangerZone")}
             </span>
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">删除后会从本地冰盒列表中移除</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">{t("detail.deleteDescription")}</span>
           </div>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">删除这个冰盒</h2>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.deleteThisIceBox")}</h2>
         </div>
 
         <div className="grid gap-3 rounded-[24px] bg-white/80 p-4 text-sm text-zinc-600 dark:bg-black/10 dark:text-zinc-300 sm:grid-cols-2">
           <div className="rounded-2xl bg-rose-500/5 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">机器 ID</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.machineId")}</p>
             <p className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.machineId}</p>
           </div>
           <div className="rounded-2xl bg-rose-500/5 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.backupBranch")}</p>
             <p className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.branch}</p>
           </div>
         </div>
 
         {deleteError ? (
           <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
-            <p className="font-medium">删除失败</p>
+            <p className="font-medium">{t("detail.deleteFailedTitle")}</p>
             <p className="mt-1 opacity-90">{deleteError}</p>
           </div>
         ) : null}
@@ -1753,8 +1762,8 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         {confirmDelete ? (
           <div className="flex flex-col gap-4 rounded-[24px] border border-rose-500/20 bg-rose-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1 text-sm text-rose-700 dark:text-rose-300">
-              <p className="font-medium">确定要删除「{iceBox.name}」吗？</p>
-              <p>删除后会立刻从当前设备的冰盒列表消失。</p>
+              <p className="font-medium">{t("detail.confirmDeleteTitle", { name: iceBox.name })}</p>
+              <p>{t("detail.confirmDeleteDescription")}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -1766,7 +1775,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 disabled={isDeleting}
                 className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-300 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-zinc-200 dark:hover:border-white/20"
               >
-                先等等
+                {t("detail.waitAMoment")}
               </button>
               <button
                 type="button"
@@ -1774,19 +1783,19 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 disabled={isDeleting}
                 className="inline-flex items-center justify-center rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isDeleting ? "正在删除..." : "确认删除"}
+                {isDeleting ? t("detail.deleting") : t("detail.confirmDelete")}
               </button>
             </div>
           </div>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-dashed border-rose-500/20 p-4">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">从本地列表移除当前冰盒。</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">{t("detail.removeFromLocalList")}</p>
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
               className="inline-flex items-center justify-center rounded-full border border-rose-500/30 bg-white px-5 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-500 hover:bg-rose-500/5 dark:bg-black/10 dark:text-rose-300 dark:hover:bg-rose-500/10"
             >
-              删除冰盒
+              {t("detail.deleteIceBox")}
             </button>
           </div>
         )}
