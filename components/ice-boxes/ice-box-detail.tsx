@@ -883,44 +883,84 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
           <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">基本信息</h2>
-          <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>冰盒名称</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{iceBox.name}</dd>
+          <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2">
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">冰盒名称</dt>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{iceBox.name}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>机器 ID</dt>
-              <dd className="font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.machineId}</dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">机器 ID</dt>
+              <dd className="mt-2 font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.machineId}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>分支名称</dt>
-              <dd className="font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.branch}</dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">分支名称</dt>
+              <dd className="mt-2 font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.branch}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>备份方案</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份方案</dt>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>上传加密</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                {encryptionEnabled ? "已启用 AES-256-GCM" : "未启用"}
-              </dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5 sm:col-span-2">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Git 仓库</dt>
+              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.repository}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>远端同步状态</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{syncMeta.label}</dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</dt>
+              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.branch}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>最近同步时间</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt)}</dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">ice-box-id</dt>
+              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.iceBoxId}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>创建时间</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.createdAt)}</dd>
+            {iceBox.backupMode === "upload-token" ? (
+              <>
+                <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5 sm:col-span-2">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传地址</dt>
+                  <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{uploadUrl ?? "未生成"}</dd>
+                </div>
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">上传 Token</dt>
+                  <dd className="mt-2 break-all font-mono text-xs text-amber-900 dark:text-amber-100">{iceBox.skillConfig.uploadToken}</dd>
+                </div>
+                <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">加密信息</dt>
+                  <dd className="mt-2 text-sm text-zinc-900 dark:text-zinc-100">
+                    {encryptionEnabled ? "已启用 AES-256-GCM / PBKDF2-SHA256" : "未启用"}
+                  </dd>
+                  {encryptionEnabled ? (
+                    <>
+                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        KDF：{iceBox.skillConfig.encryption.kdf} / {iceBox.skillConfig.encryption.kdfIterations.toLocaleString("zh-CN")} 次
+                      </dd>
+                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">Salt：{iceBox.skillConfig.encryption.kdfSalt}</dd>
+                      {iceBox.skillConfig.encryption.keyHint ? (
+                        <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">密钥提示：{iceBox.skillConfig.encryption.keyHint}</dd>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传加密</dt>
+                <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">未启用</dd>
+              </div>
+            )}
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">远端同步状态</dt>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{syncMeta.label}</dd>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt>最后更新</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.updatedAt)}</dd>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">最近同步时间</dt>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt)}</dd>
+            </div>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">创建时间</dt>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.createdAt)}</dd>
+            </div>
+            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">最后更新</dt>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.updatedAt)}</dd>
             </div>
           </dl>
         </div>
@@ -1078,7 +1118,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="grid gap-4">
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
           <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">Skill 文档</h2>
           <div className="rounded-[24px] bg-white p-5 text-sm leading-6 text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
@@ -1270,58 +1310,6 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               </div>
             ) : null}
           </div>
-        </div>
-
-        <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">连接配置</h2>
-          <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300">
-            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Git 仓库</dt>
-              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.repository}</dd>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</dt>
-              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.branch}</dd>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">ice-box-id</dt>
-              <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.iceBoxId}</dd>
-            </div>
-            {iceBox.backupMode === "upload-token" ? (
-              <>
-                <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传地址</dt>
-                  <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{uploadUrl ?? "未生成"}</dd>
-                </div>
-                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">上传 Token</dt>
-                  <dd className="mt-2 break-all font-mono text-xs text-amber-900 dark:text-amber-100">{iceBox.skillConfig.uploadToken}</dd>
-                </div>
-                <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传加密</dt>
-                  <dd className="mt-2 text-sm text-zinc-900 dark:text-zinc-100">
-                    {encryptionEnabled ? "已启用 AES-256-GCM / PBKDF2-SHA256" : "未启用"}
-                  </dd>
-                  {encryptionEnabled ? (
-                    <>
-                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                        密钥策略：每次上传手动提供主密钥，默认不落盘保存。
-                      </dd>
-                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                        KDF：{iceBox.skillConfig.encryption.kdf} / {iceBox.skillConfig.encryption.kdfIterations.toLocaleString("zh-CN")} 次
-                      </dd>
-                      <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                        Salt：{iceBox.skillConfig.encryption.kdfSalt}
-                      </dd>
-                      {iceBox.skillConfig.encryption.keyHint ? (
-                        <dd className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">密钥提示：{iceBox.skillConfig.encryption.keyHint}</dd>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
-          </dl>
         </div>
       </div>
 
