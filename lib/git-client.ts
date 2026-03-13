@@ -316,12 +316,25 @@ async function removeEntry(fsPromises: BrowserFsPromises, targetPath: string): P
   }
 }
 
-async function prepareRepoDir(repository: string) {
+async function pathExists(fsPromises: BrowserFsPromises, targetPath: string) {
+  try {
+    await fsPromises.stat(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function prepareRepoDir(repository: string, options?: { wipe?: boolean; key?: string }) {
   const fs = getFs();
   const fsPromises = fs.promises;
   await ensureDir(fsPromises, repoRoot);
-  const dir = `${repoRoot}/${encodeRepositoryKey(repository)}`;
-  await removeEntry(fsPromises, dir);
+  const dir = `${repoRoot}/${encodeRepositoryKey(options?.key ?? repository)}`;
+
+  if (options?.wipe ?? true) {
+    await removeEntry(fsPromises, dir);
+  }
+
   await ensureDir(fsPromises, dir);
   return { fs, dir };
 }
@@ -873,11 +886,11 @@ function buildIceBoxBranch(iceBoxId: string) {
 }
 
 async function loadIceBoxBranchRepo(config: GitRepositoryConfig, iceBoxId: string) {
-  const { fs, dir } = await prepareRepoDir(config.repository);
   const onAuth = getAuthCallback(config);
   const http = createHttpAdapter(onAuth);
   const branch = buildIceBoxBranch(iceBoxId);
-
+  const repoKey = `${config.repository}#${branch}`;
+  const { fs, dir } = await prepareRepoDir(config.repository, { wipe: false, key: repoKey });
   const branchExists = await git
     .listServerRefs({
       http,
@@ -892,16 +905,35 @@ async function loadIceBoxBranchRepo(config: GitRepositoryConfig, iceBoxId: strin
     throw new IceBoxHistoryBranchMissingError(branch);
   }
 
-  await git.clone({
-    fs,
-    http,
-    dir,
-    url: config.repository,
-    ref: branch,
-    singleBranch: true,
-    depth: 20,
-    onAuth,
-  });
+  const hasGitRepo = await pathExists(fs.promises, `${dir}/.git`);
+
+  if (!hasGitRepo) {
+    await removeEntry(fs.promises, dir);
+    await ensureDir(fs.promises, dir);
+    await git.clone({
+      fs,
+      http,
+      dir,
+      url: config.repository,
+      ref: branch,
+      singleBranch: true,
+      depth: 20,
+      onAuth,
+    });
+  } else {
+    await git.fetch({
+      fs,
+      http,
+      dir,
+      url: config.repository,
+      ref: branch,
+      singleBranch: true,
+      depth: 20,
+      onAuth,
+      prune: true,
+      tags: false,
+    });
+  }
 
   await git.checkout({ fs, dir, ref: branch, force: true });
 
