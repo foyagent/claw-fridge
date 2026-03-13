@@ -178,17 +178,22 @@ function buildRestoreBranchPreview(branch: string, entry: IceBoxHistoryEntry | n
   };
 }
 
-async function readHistoryEntries(workingDirectory: string, branch: string, depth: number): Promise<IceBoxHistoryEntry[]> {
+async function ensureRemoteBranchExists(workingDirectory: string, branch: string): Promise<boolean> {
   const ref = `refs/remotes/origin/${branch}`;
 
   try {
     await git.resolveRef({ fs, dir: workingDirectory, ref });
-    const commits = await git.log({ fs, dir: workingDirectory, ref, depth });
-
-    return commits.map((commit) => buildHistoryEntry(branch, commit));
+    return true;
   } catch {
-    return [];
+    return false;
   }
+}
+
+async function readHistoryEntries(workingDirectory: string, branch: string, depth: number): Promise<IceBoxHistoryEntry[]> {
+  const ref = `refs/remotes/origin/${branch}`;
+  const commits = await git.log({ fs, dir: workingDirectory, ref, depth });
+
+  return commits.map((commit) => buildHistoryEntry(branch, commit));
 }
 
 async function readBranchPreview(workingDirectory: string, branch: string): Promise<RestoreBranchPreview> {
@@ -276,6 +281,25 @@ export async function listIceBoxBackupHistory(input: {
     const limit = Math.max(1, Math.min(50, Math.floor(requestedLimit)));
 
     return await withRepositoryClone(input.gitConfig, async ({ workingDirectory }) => {
+      const branchExists = await ensureRemoteBranchExists(workingDirectory, requestedBranch);
+
+      if (!branchExists) {
+        logDevInfo("restore.history", "backup history branch missing", {
+          branch: requestedBranch,
+          machineId: normalizedMachineId,
+        });
+
+        return {
+          ok: true,
+          message: `分支 \`${requestedBranch}\` 还不存在，说明这个冰盒还没有产生首个备份。`,
+          fetchedAt,
+          branch: requestedBranch,
+          machineId: normalizedMachineId,
+          historyState: "branch-missing",
+          entries: [],
+        } satisfies IceBoxHistoryResult;
+      }
+
       const entries = await readHistoryEntries(workingDirectory, requestedBranch, limit);
 
       logDevInfo("restore.history", "backup history loaded", {
@@ -292,6 +316,7 @@ export async function listIceBoxBackupHistory(input: {
         fetchedAt,
         branch: requestedBranch,
         machineId: normalizedMachineId,
+        historyState: "ready",
         entries,
       } satisfies IceBoxHistoryResult;
     });

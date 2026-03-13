@@ -205,6 +205,7 @@ export interface IceBoxHistoryResult extends OperationResultFields {
   fetchedAt: string;
   branch?: string;
   machineId?: string;
+  historyState?: "ready" | "branch-missing";
   entries?: IceBoxHistoryEntry[];
 }
 

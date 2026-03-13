@@ -6,7 +6,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
 import { useMounted } from "@/hooks/use-mounted";
 import { isEncryptionEnabled } from "@/lib/backup-encryption";
-import { getIceBoxHistory, loadStoredGitCredentials, shouldFallbackToServer } from "@/lib/git-client";
+import {
+  getIceBoxHistory,
+  isIceBoxHistoryBranchMissingError,
+  loadStoredGitCredentials,
+  shouldFallbackToServer,
+} from "@/lib/git-client";
 import {
   calculateIceBoxReminderSnapshot,
   getIceBoxReminderPresetMeta,
@@ -111,6 +116,53 @@ function ResultDetails({ details }: { details: string }) {
   );
 }
 
+type IceBoxHistoryViewState = "idle" | "ready" | "branch-missing" | "error";
+
+interface IceBoxHistoryCacheRecord {
+  entries: IceBoxHistoryEntry[];
+  viewState: Exclude<IceBoxHistoryViewState, "idle" | "error">;
+  cachedAt: string;
+}
+
+function getHistoryCacheKey(iceBoxId: string) {
+  return `claw-fridge:ice-box-history:${iceBoxId}`;
+}
+
+function readHistoryCache(iceBoxId: string): IceBoxHistoryCacheRecord | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(getHistoryCacheKey(iceBoxId));
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue = JSON.parse(rawValue) as Partial<IceBoxHistoryCacheRecord>;
+    const entries = Array.isArray(parsedValue.entries) ? parsedValue.entries : [];
+    const viewState = parsedValue.viewState === "branch-missing" ? "branch-missing" : "ready";
+
+    return {
+      entries,
+      viewState,
+      cachedAt: typeof parsedValue.cachedAt === "string" ? parsedValue.cachedAt : new Date().toISOString(),
+    };
+  } catch {
+    window.localStorage.removeItem(getHistoryCacheKey(iceBoxId));
+    return null;
+  }
+}
+
+function writeHistoryCache(iceBoxId: string, record: IceBoxHistoryCacheRecord) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(getHistoryCacheKey(iceBoxId), JSON.stringify(record));
+}
+
 export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: boolean }) {
   const mounted = useMounted();
   const router = useRouter();
@@ -143,8 +195,10 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
   const [replaceExistingRestoreTarget, setReplaceExistingRestoreTarget] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<IceBoxHistoryEntry[]>([]);
   const [historyError, setHistoryError] = useState<OperationNotice | null>(null);
+  const [historyViewState, setHistoryViewState] = useState<IceBoxHistoryViewState>("idle");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+  const [historyRefreshNonce, setHistoryRefreshNonce] = useState(0);
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<IceBoxHistoryEntry | null>(null);
   const [reminderDraft, setReminderDraft] = useState<IceBoxReminderConfig | null>(null);
   const [reminderNotice, setReminderNotice] = useState<string | null>(null);
@@ -212,16 +266,20 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
   }, [iceBox, scheduledBackupInSkill]);
 
   useEffect(() => {
+    const cachedHistory = readHistoryCache(id);
+
     setRestoreTargetRootDir("");
     setRestorePreview(null);
     setRestoreResult(null);
     setRestoreError(null);
     setConfirmRestore(false);
     setReplaceExistingRestoreTarget(false);
-    setHistoryEntries([]);
+    setHistoryEntries(cachedHistory?.entries ?? []);
     setHistoryError(null);
+    setHistoryViewState(cachedHistory?.viewState ?? "idle");
     setIsLoadingHistory(false);
-    setHasLoadedHistory(false);
+    setHasLoadedHistory(Boolean(cachedHistory));
+    setHistoryRefreshNonce((currentValue) => currentValue + 1);
     setSelectedHistoryEntry(null);
     setSyncNotice(null);
     setIsSyncingToRemote(false);
@@ -304,44 +362,56 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     setHistoryError(null);
 
     try {
-      let entries: IceBoxHistoryEntry[];
+      let entries: IceBoxHistoryEntry[] = [];
+      let nextViewState: Exclude<IceBoxHistoryViewState, "idle" | "error"> = "ready";
 
       try {
         entries = await getIceBoxHistory(gitConfig, machineId);
       } catch (frontendError) {
-        if (!shouldFallbackToServer(frontendError)) {
-          throw frontendError;
+        if (isIceBoxHistoryBranchMissingError(frontendError)) {
+          nextViewState = "branch-missing";
+        } else {
+          if (!shouldFallbackToServer(frontendError)) {
+            throw frontendError;
+          }
+
+          const response = await fetch(`/api/ice-boxes/${targetIceBoxId}/history`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              machineId,
+              branch,
+              gitConfig,
+              limit: 20,
+            }),
+          });
+          const result = await readApiPayload<IceBoxHistoryResult>(response);
+
+          if (!response.ok || !result.ok) {
+            setHistoryError(toOperationNotice(result, "读取备份历史失败。"));
+            setHistoryViewState("error");
+            setHasLoadedHistory(true);
+            return;
+          }
+
+          entries = result.entries ?? [];
+          nextViewState = result.historyState === "branch-missing" ? "branch-missing" : "ready";
         }
-
-        const response = await fetch(`/api/ice-boxes/${targetIceBoxId}/history`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            machineId,
-            branch,
-            gitConfig,
-            limit: 20,
-          }),
-        });
-        const result = await readApiPayload<IceBoxHistoryResult>(response);
-
-        if (!response.ok || !result.ok) {
-          setHistoryEntries([]);
-          setHistoryError(toOperationNotice(result, "读取备份历史失败。"));
-          setHasLoadedHistory(true);
-          return;
-        }
-
-        entries = result.entries ?? [];
       }
 
       const latestBackupAt = entries[0]?.committedAt ?? null;
 
       setHistoryEntries(entries);
+      setHistoryViewState(nextViewState);
       setHistoryError(null);
       setHasLoadedHistory(true);
+      writeHistoryCache(targetIceBoxId, {
+        entries,
+        viewState: nextViewState,
+        cachedAt: new Date().toISOString(),
+      });
       syncIceBoxBackupState(targetIceBoxId, latestBackupAt);
       setSelectedHistoryEntry((currentEntry) => {
         if (!currentEntry) {
@@ -351,7 +421,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         return entries.find((entry) => entry.commit === currentEntry.commit) ?? null;
       });
     } catch (actionError) {
-      setHistoryEntries([]);
+      setHistoryViewState("error");
       setHistoryError(toRequestFailureNotice("读取备份历史时", actionError));
       setHasLoadedHistory(true);
     } finally {
@@ -364,12 +434,8 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       return;
     }
 
-    if (hasLoadedHistory) {
-      return;
-    }
-
     void loadHistory(iceBox.id, iceBox.machineId, iceBox.branch);
-  }, [hasConfiguredRepository, hasLoadedHistory, iceBox, isLoadingHistory, loadHistory, mounted]);
+  }, [hasConfiguredRepository, historyRefreshNonce, iceBox, isLoadingHistory, loadHistory, mounted]);
 
   function handleSelectHistoryEntry(entry: IceBoxHistoryEntry) {
     setSelectedHistoryEntry(entry);
@@ -1149,7 +1215,6 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                 return;
               }
 
-              setHasLoadedHistory(false);
               void loadHistory(iceBox.id, iceBox.machineId, iceBox.branch);
             }}
             disabled={!hasConfiguredRepository || isLoadingHistory}
@@ -1166,7 +1231,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           </div>
         ) : null}
 
-        {historyError ? (
+        {historyError && historyEntries.length === 0 && historyViewState === "error" ? (
           <div className="flex flex-col gap-3 rounded-3xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-medium">备份历史加载失败</p>
@@ -1189,7 +1254,14 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           </div>
         ) : null}
 
-        {isLoadingHistory ? (
+        {historyError && historyEntries.length > 0 ? (
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+            <p className="font-medium">已展示上次缓存的历史记录</p>
+            <p className="mt-1 opacity-90">后台刷新这次没成功，你先用旧记录顶着，稍后再试。</p>
+          </div>
+        ) : null}
+
+        {isLoadingHistory && historyEntries.length === 0 && historyViewState === "idle" ? (
           <div className="grid gap-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <div
@@ -1209,7 +1281,21 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           </div>
         ) : null}
 
-        {!isLoadingHistory && hasConfiguredRepository && hasLoadedHistory && historyEntries.length === 0 && !historyError ? (
+        {!isLoadingHistory && hasConfiguredRepository && hasLoadedHistory && historyEntries.length === 0 && !historyError && historyViewState === "branch-missing" ? (
+          <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 bg-white/60 p-8 text-center dark:border-white/10 dark:bg-white/5">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 text-2xl dark:bg-white/10">
+              🧊
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">这个冰盒还没有备份历史</h3>
+              <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                完成首次备份后会在这里显示，当前还没有创建出对应的远端备份分支。
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {!isLoadingHistory && hasConfiguredRepository && hasLoadedHistory && historyEntries.length === 0 && !historyError && historyViewState === "ready" ? (
           <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 bg-white/60 p-8 text-center dark:border-white/10 dark:bg-white/5">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 text-2xl dark:bg-white/10">
               📭
@@ -1223,7 +1309,13 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           </div>
         ) : null}
 
-        {!isLoadingHistory && historyEntries.length > 0 ? (
+        {isLoadingHistory && historyEntries.length > 0 ? (
+          <div className="rounded-2xl border border-zinc-200/80 bg-white/70 px-4 py-3 text-sm text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300">
+            正在后台刷新备份历史，列表会在拿到新结果后自动更新。
+          </div>
+        ) : null}
+
+        {historyEntries.length > 0 ? (
           <div className="grid gap-3">
             {historyEntries.map((entry) => {
               const isSelected = selectedHistoryEntry?.commit === entry.commit;

@@ -155,8 +155,22 @@ export class FrontendGitFallbackError extends Error {
   }
 }
 
+export class IceBoxHistoryBranchMissingError extends Error {
+  branch: string;
+
+  constructor(branch: string) {
+    super(`冰盒分支 ${branch} 不存在。`);
+    this.name = "IceBoxHistoryBranchMissingError";
+    this.branch = branch;
+  }
+}
+
 export function shouldFallbackToServer(error: unknown) {
   return error instanceof FrontendGitFallbackError;
+}
+
+export function isIceBoxHistoryBranchMissingError(error: unknown): error is IceBoxHistoryBranchMissingError {
+  return error instanceof IceBoxHistoryBranchMissingError;
 }
 
 function buildFrontendFallbackError(repository: string, error: unknown) {
@@ -875,7 +889,7 @@ async function loadIceBoxBranchRepo(config: GitRepositoryConfig, iceBoxId: strin
     .then((refs) => refs.some((ref) => ref.ref === `refs/heads/${branch}`));
 
   if (!branchExists) {
-    throw new Error(`冰盒分支 ${branch} 不存在，请先创建冰盒。`);
+    throw new IceBoxHistoryBranchMissingError(branch);
   }
 
   await git.clone({
@@ -922,6 +936,10 @@ export async function getIceBoxHistory(
       authorEmail: entry.commit.author.email ?? null,
     }));
   } catch (error) {
+    if (isIceBoxHistoryBranchMissingError(error)) {
+      throw error;
+    }
+
     const classified = classifyGitError(config.repository, error);
 
     if (classified.message.includes("浏览器模式暂不支持") || classified.message.includes("浏览器无法直接访问")) {
