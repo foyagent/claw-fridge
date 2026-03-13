@@ -26,7 +26,7 @@
     "toggleLanguage": "Toggle language"
   },
   "home": {
-    "title": "Ice Boxes",
+    "title": "冰箱",
     "newIceBox": "New ice box",
     "collapseCreateForm": "Hide create form",
     "loadFailed": "Failed to load ice boxes",

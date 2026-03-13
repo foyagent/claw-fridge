@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Providers } from "@/components/providers";
-import { SilentRefreshIndicator } from "@/components/silent-refresh-indicator";
 import { ThemeLanguageSwitch } from "@/components/theme-language-switch";
 import { defaultLocale, isLocale, localeCookieName, type Locale } from "@/i18n/config";
 import "./globals.css";
@@ -49,7 +48,6 @@ export default async function RootLayout({
         <Providers locale={locale} messages={messages}>
           <div className="flex min-h-screen flex-col">
             <ThemeLanguageSwitch />
-            <SilentRefreshIndicator />
             <div className="flex-1">{children}</div>
             <Footer />
           </div>
