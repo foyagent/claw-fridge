@@ -1,8 +1,11 @@
 "use client";
 
+import { useLocale, useTranslations } from "next-intl";
 import { useAppStore } from "@/store/app-store";
 
 export function ProjectStatus() {
+  const t = useTranslations();
+  const locale = useLocale();
   const projectName = useAppStore((state) => state.projectName);
   const initializedAt = useAppStore((state) => state.initializedAt);
   const integrations = useAppStore((state) => state.integrations);
@@ -11,10 +14,12 @@ export function ProjectStatus() {
     <section className="fridge-panel grid gap-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-1">
-          <span className="fridge-kicker">Project</span>
+          <span className="fridge-kicker">{t("projectStatus.kicker")}</span>
           <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{projectName}</h2>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            初始化时间：{new Date(initializedAt).toLocaleString("zh-CN", { hour12: false })}
+            {t("projectStatus.initializedAt", {
+              value: new Date(initializedAt).toLocaleString(locale, { hour12: false }),
+            })}
           </p>
         </div>
 

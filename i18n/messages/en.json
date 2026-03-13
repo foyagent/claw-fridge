@@ -236,6 +236,177 @@
     "deleteIceBox": "Delete ice box",
     "commitHash": "Commit hash",
     "restoreBadge": "Restore",
-    "dangerZone": "Danger zone"
+    "dangerZone": "Danger zone",
+    "scheduleDescriptionDaily": "Daily at {time} ({timezone})",
+    "scheduleDescriptionWeekly": "Every {weekday} at {time} ({timezone})",
+    "scheduleDescriptionMonthly": "Day {day} of each month at {time} ({timezone})",
+    "scheduleDescriptionCustom": "Custom cron: {cron} ({timezone})"
+  },
+  "gitConfig": {
+    "title": "Git config",
+    "description": "Enter the repository info and test it directly. The initialize button only appears after confirming `{branch}` does not exist.",
+    "repository": "Repository URL",
+    "repositoryPlaceholder": "~/projects/openclaw or {example}",
+    "authMethod": "Auth method",
+    "noAuth": "No auth required",
+    "username": "Username",
+    "accessToken": "Access token",
+    "clearCredentials": "Clear local credentials",
+    "save": "Save config",
+    "testing": "Testing...",
+    "testConnection": "Test connection",
+    "initialize": "Initialize {branch}",
+    "initializing": "Initializing {branch}...",
+    "resetDraft": "Reset draft",
+    "saved": "Git config saved",
+    "credentialsCleared": "Local credentials cleared",
+    "connectionSuccess": "Connection successful",
+    "connectionFailed": "Connection failed",
+    "defaultBranch": "Default branch",
+    "branchStatus": "{branch} branch: {status}",
+    "branchExists": "Exists. You can go straight to the ice box list.",
+    "branchMissing": "Missing. Initialize it first.",
+    "initializeHint": "Connection passed, but `{branch}` is not in the repository yet. Click initialize above to continue.",
+    "initSuccess": "Initialization complete",
+    "initFailed": "Initialization failed",
+    "targetBranch": "Target branch",
+    "commit": "Commit",
+    "viewInitFileChanges": "View initialized file changes",
+    "fileCreated": "Created",
+    "fileOverwritten": "Overwritten",
+    "fileKept": "Kept",
+    "notSaved": "Not saved"
+  },
+  "fridgeInit": {
+    "title": "Initialize",
+    "loadBranch": "Load {branch}",
+    "initializeBranch": "Initialize {branch}",
+    "initializing": "{action}...",
+    "initSuccess": "Initialization complete",
+    "initFailed": "Initialization failed"
+  },
+  "projectStatus": {
+    "kicker": "Project",
+    "initializedAt": "Initialized at: {value}"
+  },
+  "silentRefresh": {
+    "label": "Refreshing quietly: {targets}"
+  },
+  "iceBoxStatus": {
+    "healthy": {
+      "label": "Healthy",
+      "description": "The latest backup completed successfully and things look stable."
+    },
+    "syncing": {
+      "label": "Syncing",
+      "description": "A backup is running or the latest snapshot is still being written."
+    },
+    "attention": {
+      "label": "Needs attention",
+      "description": "The latest backup had issues. Worth checking soon."
+    }
+  },
+  "iceBoxSync": {
+    "synced": {
+      "label": "Synced to remote",
+      "shortLabel": "Remote synced",
+      "description": "This ice box has been verified by reading it back from the remote fridge-config branch."
+    },
+    "pending": {
+      "label": "Waiting for remote verification",
+      "shortLabel": "Pending",
+      "description": "The local record exists, but the remote fridge-config branch has not verified it yet."
+    },
+    "failed": {
+      "label": "Remote verification failed",
+      "shortLabel": "Failed",
+      "description": "The ice box exists locally, but the latest write/read-back check against the remote fridge-config branch failed."
+    }
+  },
+  "backupMode": {
+    "gitBranch": {
+      "label": "Git direct push",
+      "description": "OpenClaw syncs .openclaw directly to a dedicated branch."
+    },
+    "uploadToken": {
+      "label": "Archive upload",
+      "description": "OpenClaw uploads an archive to the dedicated ice box endpoint, then Claw-Fridge stores it."
+    }
+  },
+  "relative": {
+    "minutes": "{count} minutes",
+    "hours": "{count} hours",
+    "days": "{count} days"
+  },
+  "reminderPreset": {
+    "daily": {
+      "description": "Good for active machines. Missing once is easy to recover from."
+    },
+    "every3Days": {
+      "description": "A balanced cadence for regular work machines."
+    },
+    "weekly": {
+      "description": "Good for low-change machines with a calmer default rhythm."
+    },
+    "custom": {
+      "description": "Choose your own interval for special workflows."
+    }
+  },
+  "reminder": {
+    "disabledConfig": "Reminders disabled",
+    "customConfig": "Every {intervalHours} hours · {graceHours}-hour grace window",
+    "presetConfig": "{label} · {graceHours}-hour grace window",
+    "status": {
+      "disabled": "Disabled",
+      "disabledDescription": "This ice box will not prompt for backups automatically.",
+      "waitingBaseline": "Waiting for baseline",
+      "waitingBaselineDescription": "There is not enough timing data yet to schedule reminders.",
+      "invalidTime": "Invalid time",
+      "invalidTimeDescription": "The current baseline time is invalid, so the next reminder cannot be calculated yet.",
+      "waitingFirstBackup": "Waiting for first backup",
+      "scheduled": "Scheduled",
+      "waitingFirstBackupDescription": "If there is still no first backup in {duration}, a reminder should fire.",
+      "scheduledDescription": "The next reminder window opens in {duration}.",
+      "firstBackupDue": "First backup due",
+      "due": "Reminder due",
+      "firstBackupOverdue": "First backup overdue",
+      "overdue": "Reminder overdue",
+      "dueDescription": "The reminder window is open. It became due {duration} ago.",
+      "overdueDescription": "The reminder window passed {duration} ago. A backup is recommended soon."
+    }
+  },
+  "skillPage": {
+    "errorKicker": "Skill error",
+    "errorTitle": "Failed to generate Skill document",
+    "errorHint": "Check that the config parameters in the link are complete, then reopen the Skill document from the ice box detail page.",
+    "unknownError": "An unknown error occurred while generating the Skill document. Please try again later.",
+    "backupMode": "Backup",
+    "deliverable": "Deliverable",
+    "title": "{mode} Skill document for {name}",
+    "description": "This page outputs the Markdown you can save directly as `SKILL.md`, along with the install path, Skill link, workflow notes, and whether Git credential placeholders are included.",
+    "iceBoxId": "ice-box-id",
+    "machineId": "machine-id",
+    "documentMode": "Document mode",
+    "installPath": "Install path",
+    "gitAuth": "Git auth",
+    "gitCredentialsIncluded": "Git credential placeholders",
+    "included": "Included",
+    "notIncluded": "Not included",
+    "scheduledBackup": "Scheduled backup",
+    "uploadEncryption": "Upload encryption",
+    "notApplicable": "Not applicable",
+    "installGuide": "Install guide",
+    "createDirectory": "Create directory",
+    "saveFile": "Save file",
+    "saveFileDescription": "Save the Markdown below to `{path}`.",
+    "reload": "Reload",
+    "reloadDescription": "Keep the filename as `SKILL.md`, then open a new OpenClaw session to confirm the Skill is loaded.",
+    "connectionInfo": "Connection info",
+    "gitRepository": "Git repository",
+    "targetBranch": "Target branch",
+    "skillLink": "Skill link",
+    "markdownTitle": "Markdown source",
+    "markdownDescription": "The content below is the final Skill document and can be saved directly as `SKILL.md`. Before sharing, make sure it does not expose a private upload URL, token, or encryption parameters.",
+    "readyToDeliver": "Ready to deliver"
   }
 }

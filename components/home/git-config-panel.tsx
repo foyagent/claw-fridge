@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { useMounted } from "@/hooks/use-mounted";
 import {
   detectRepositoryFlavor,
@@ -83,15 +84,15 @@ function syncAuthConfigWithRepository(
   return currentAuth;
 }
 
-function formatDateTime(value: string | null | undefined) {
+function formatDateTime(value: string | null | undefined, locale: string, fallback: string) {
   if (!value) {
-    return "未保存";
+    return fallback;
   }
 
-  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+  return new Date(value).toLocaleString(locale, { hour12: false });
 }
 
-function formatFileStatus(result: GitConfigInitResult) {
+function formatFileStatus(result: GitConfigInitResult, t: ReturnType<typeof useTranslations>) {
   if (!result.files?.length) {
     return null;
   }
@@ -100,17 +101,17 @@ function formatFileStatus(result: GitConfigInitResult) {
     .map((file) => {
       const statusLabel =
         file.status === "created"
-          ? "已创建"
+          ? t("gitConfig.fileCreated")
           : file.status === "overwritten"
-            ? "已覆盖"
-            : "已保留";
+            ? t("gitConfig.fileOverwritten")
+            : t("gitConfig.fileKept");
 
-      return `${file.path}：${statusLabel}`;
+      return `${file.path}: ${statusLabel}`;
     })
     .join("\n");
 }
 
-function ResultDetails({ details, label = "查看细节" }: { details: string; label?: string }) {
+function ResultDetails({ details, label }: { details: string; label: string }) {
   return (
     <details className="mt-3 rounded-xl bg-black/5 p-3 text-xs leading-5 text-current dark:bg-black/20">
       <summary className="cursor-pointer font-medium">{label}</summary>
@@ -120,6 +121,8 @@ function ResultDetails({ details, label = "查看细节" }: { details: string; l
 }
 
 export function GitConfigPanel() {
+  const t = useTranslations();
+  const locale = useLocale();
   const mounted = useMounted();
   const persistedConfig = useAppStore((state) => state.gitConfig);
   const lastGitTestResult = useAppStore((state) => state.lastGitTestResult);
@@ -220,12 +223,12 @@ export function GitConfigPanel() {
     if (effectiveConfig.auth.method === "https-token" && effectiveConfig.auth.token.trim()) {
       persistGitCredentials(effectiveConfig);
     }
-    setSaveNotice("已保存 Git 配置");
+    setSaveNotice(t("gitConfig.saved"));
   };
 
   const handleTest = async () => {
     saveGitConfig(effectiveConfig);
-    setSaveNotice("已保存 Git 配置");
+    setSaveNotice(t("gitConfig.saved"));
     setIsTesting(true);
 
     try {
@@ -268,7 +271,7 @@ export function GitConfigPanel() {
           ? { ...effectiveConfig.auth, token: "" }
           : effectiveConfig.auth,
     });
-    setSaveNotice("已清除本地凭证");
+    setSaveNotice(t("gitConfig.credentialsCleared"));
   };
 
   if (!mounted) {
@@ -287,31 +290,31 @@ export function GitConfigPanel() {
     <section className="fridge-panel grid gap-6">
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-2">
-          <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">Git 配置</h2>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">填仓库信息后直接测试；只有确认不存在 `{fridgeConfigBranch}` 时才显示初始化按钮。</p>
+          <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">{t("gitConfig.title")}</h2>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">{t("gitConfig.description", { branch: fridgeConfigBranch })}</p>
         </div>
       </div>
 
       <div className="grid gap-4">
         <label className="grid gap-2">
-          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">仓库地址</span>
+          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("gitConfig.repository")}</span>
           <input
             value={draftConfig.repository}
             onChange={(event) => handleRepositoryChange(event.target.value)}
-            placeholder={`~/projects/openclaw 或 ${platformExamples.https}`}
+            placeholder={t("gitConfig.repositoryPlaceholder", { example: platformExamples.https })}
             className="fridge-input"
           />
         </label>
 
         <label className="grid gap-2">
-          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">认证方式</span>
+          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("gitConfig.authMethod")}</span>
           <select
             value={repositoryKind === "local" ? "none" : effectiveConfig.auth.method}
             onChange={(event) => handleAuthMethodChange(event.target.value as GitAuthMethod)}
             disabled={repositoryKind === "local"}
             className="fridge-select"
           >
-            <option value="none">无需认证</option>
+            <option value="none">{t("gitConfig.noAuth")}</option>
             <option value="https-token" disabled={repositoryFlavor === "ssh"}>
               HTTPS Token
             </option>
@@ -324,7 +327,7 @@ export function GitConfigPanel() {
         {repositoryKind === "remote" && effectiveConfig.auth.method === "https-token" ? (
           <div className="grid gap-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-white/10 dark:bg-zinc-950/50">
             <label className="grid gap-2">
-              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">用户名</span>
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("gitConfig.username")}</span>
               <input
                 value={effectiveConfig.auth.username}
                 onChange={(event) => {
@@ -343,7 +346,7 @@ export function GitConfigPanel() {
             </label>
 
             <label className="grid gap-2">
-              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">访问 Token</span>
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("gitConfig.accessToken")}</span>
               <input
                 type="password"
                 value={effectiveConfig.auth.token}
@@ -363,21 +366,21 @@ export function GitConfigPanel() {
             </label>
 
             <button type="button" onClick={handleClearCredentials} className="fridge-button-ghost w-fit">
-              清除本地凭证
+              {t("gitConfig.clearCredentials")}
             </button>
           </div>
         ) : null}
 
         <div className="flex flex-wrap gap-3">
           <button type="button" onClick={handleSave} className="fridge-button-primary">
-            保存配置
+            {t("gitConfig.save")}
           </button>
           <button type="button" onClick={() => void handleTest()} disabled={!canTest} className="fridge-button-secondary">
-            {isTesting ? "测试中..." : "测试连接"}
+            {isTesting ? t("gitConfig.testing") : t("gitConfig.testConnection")}
           </button>
           {shouldShowInitialize ? (
             <button type="button" onClick={() => void handleInitialize()} disabled={!canInitialize} className="fridge-button-secondary">
-              {isInitializing ? `初始化 ${fridgeConfigBranch}中...` : `初始化 ${fridgeConfigBranch}`}
+              {isInitializing ? t("gitConfig.initializing", { branch: fridgeConfigBranch }) : t("gitConfig.initialize", { branch: fridgeConfigBranch })}
             </button>
           ) : null}
           <button
@@ -386,7 +389,7 @@ export function GitConfigPanel() {
             disabled={!isDirty && !lastGitTestResult && !lastGitInitResult}
             className="fridge-button-ghost"
           >
-            还原草稿
+            {t("gitConfig.resetDraft")}
           </button>
         </div>
 
@@ -400,23 +403,23 @@ export function GitConfigPanel() {
             ].join(" ")}
           >
             <div className="flex items-center justify-between gap-3">
-              <strong>{lastGitTestResult.ok ? "连接成功" : "连接失败"}</strong>
-              <span className="text-xs opacity-80">{formatDateTime(lastGitTestResult.checkedAt)}</span>
+              <strong>{lastGitTestResult.ok ? t("gitConfig.connectionSuccess") : t("gitConfig.connectionFailed")}</strong>
+              <span className="text-xs opacity-80">{formatDateTime(lastGitTestResult.checkedAt, locale, t("gitConfig.notSaved"))}</span>
             </div>
             <p className="mt-2">{lastGitTestResult.message}</p>
-            {lastGitTestResult.defaultBranch ? <p className="mt-2">默认分支：{lastGitTestResult.defaultBranch}</p> : null}
+            {lastGitTestResult.defaultBranch ? <p className="mt-2">{t("gitConfig.defaultBranch")}:{lastGitTestResult.defaultBranch}</p> : null}
             {lastGitTestResult.hasFridgeConfig !== undefined ? (
               <p className="mt-2">
-                {fridgeConfigBranch} 分支：{lastGitTestResult.hasFridgeConfig ? "已存在，可直接进入冰盒列表" : "不存在，先初始化"}
+                {t("gitConfig.branchStatus", { branch: fridgeConfigBranch, status: lastGitTestResult.hasFridgeConfig ? t("gitConfig.branchExists") : t("gitConfig.branchMissing") })}
               </p>
             ) : null}
-            {lastGitTestResult.details ? <ResultDetails details={lastGitTestResult.details} /> : null}
+            {lastGitTestResult.details ? <ResultDetails details={lastGitTestResult.details} label={t("common.viewDetails")} /> : null}
           </div>
         ) : null}
 
         {shouldShowInitialize && !lastGitInitResult ? (
           <div className="fridge-state fridge-state--info">
-            连接已通过，但仓库里还没有 `{fridgeConfigBranch}`。点击上面的初始化按钮即可继续。
+            {t("gitConfig.initializeHint", { branch: fridgeConfigBranch })}
           </div>
         ) : null}
 
@@ -428,16 +431,16 @@ export function GitConfigPanel() {
             ].join(" ")}
           >
             <div className="flex items-center justify-between gap-3">
-              <strong>{lastGitInitResult.ok ? "初始化完成" : "初始化失败"}</strong>
-              <span className="text-xs opacity-80">{formatDateTime(lastGitInitResult.initializedAt)}</span>
+              <strong>{lastGitInitResult.ok ? t("gitConfig.initSuccess") : t("gitConfig.initFailed")}</strong>
+              <span className="text-xs opacity-80">{formatDateTime(lastGitInitResult.initializedAt, locale, t("gitConfig.notSaved"))}</span>
             </div>
             <p className="mt-2">{lastGitInitResult.message}</p>
-            {lastGitInitResult.branch ? <p className="mt-2">目标分支：{lastGitInitResult.branch}</p> : null}
-            {lastGitInitResult.commit ? <p className="mt-2">提交：{lastGitInitResult.commit}</p> : null}
-            {formatFileStatus(lastGitInitResult) ? (
-              <ResultDetails details={formatFileStatus(lastGitInitResult) ?? ""} label="查看初始化文件变更" />
+            {lastGitInitResult.branch ? <p className="mt-2">{t("gitConfig.targetBranch")}:{lastGitInitResult.branch}</p> : null}
+            {lastGitInitResult.commit ? <p className="mt-2">{t("gitConfig.commit")}:{lastGitInitResult.commit}</p> : null}
+            {formatFileStatus(lastGitInitResult, t) ? (
+              <ResultDetails details={formatFileStatus(lastGitInitResult, t) ?? ""} label={t("gitConfig.viewInitFileChanges")} />
             ) : null}
-            {lastGitInitResult.details ? <ResultDetails details={lastGitInitResult.details} /> : null}
+            {lastGitInitResult.details ? <ResultDetails details={lastGitInitResult.details} label={t("common.viewDetails")} /> : null}
           </div>
         ) : null}
       </div>

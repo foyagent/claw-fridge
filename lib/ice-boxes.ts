@@ -15,6 +15,8 @@ export interface BuildSkillLinkOptions {
   gitPrivateKeyPath?: string | null;
 }
 
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
 export function createDefaultScheduledBackupConfig(timezone?: string): IceBoxScheduledBackupConfig {
   return {
     enabled: false,
@@ -56,66 +58,82 @@ export function normalizeScheduledBackupConfig(config: Partial<IceBoxScheduledBa
   };
 }
 
-export function buildScheduledBackupDescription(config: IceBoxScheduledBackupConfig) {
+export function buildScheduledBackupDescription(config: IceBoxScheduledBackupConfig, t?: Translator) {
+  if (!t) {
+    if (!config.enabled) return "Disabled";
+    if (config.preset === "daily") return `Daily ${config.time} (${config.timezone})`;
+    if (config.preset === "weekly") return `Weekly ${config.dayOfWeek} ${config.time} (${config.timezone})`;
+    if (config.preset === "monthly") return `Monthly ${config.dayOfMonth} ${config.time} (${config.timezone})`;
+    return `Custom cron: ${config.cronExpression} (${config.timezone})`;
+  }
+
   if (!config.enabled) {
-    return "未启用";
+    return t("detail.noScheduledBackupPreset");
   }
 
   if (config.preset === "daily") {
-    return `每天 ${config.time}（${config.timezone}）`;
+    return t("detail.scheduleDescriptionDaily", { time: config.time, timezone: config.timezone });
   }
 
   if (config.preset === "weekly") {
-    return `每周${["一", "二", "三", "四", "五", "六", "日"][config.dayOfWeek - 1]} ${config.time}（${config.timezone}）`;
+    return t("detail.scheduleDescriptionWeekly", {
+      weekday: t(`detail.weekday${config.dayOfWeek}`),
+      time: config.time,
+      timezone: config.timezone,
+    });
   }
 
   if (config.preset === "monthly") {
-    return `每月 ${config.dayOfMonth} 日 ${config.time}（${config.timezone}）`;
+    return t("detail.scheduleDescriptionMonthly", {
+      day: config.dayOfMonth,
+      time: config.time,
+      timezone: config.timezone,
+    });
   }
 
-  return `自定义 Cron：${config.cronExpression}（${config.timezone}）`;
+  return t("detail.scheduleDescriptionCustom", { cron: config.cronExpression, timezone: config.timezone });
 }
 
-const statusMeta: Record<IceBoxStatus, { label: string; description: string }> = {
+const statusMeta: Record<IceBoxStatus, { labelKey: string; descriptionKey: string }> = {
   healthy: {
-    label: "运行正常",
-    description: "最近一次备份已完成，当前状态稳定。",
+    labelKey: "iceBoxStatus.healthy.label",
+    descriptionKey: "iceBoxStatus.healthy.description",
   },
   syncing: {
-    label: "同步中",
-    description: "正在执行备份或等待最新快照写入。",
+    labelKey: "iceBoxStatus.syncing.label",
+    descriptionKey: "iceBoxStatus.syncing.description",
   },
   attention: {
-    label: "需要关注",
-    description: "最近一次备份异常，建议尽快检查。",
+    labelKey: "iceBoxStatus.attention.label",
+    descriptionKey: "iceBoxStatus.attention.description",
   },
 };
 
 const syncStatusMeta: Record<
   IceBoxSyncStatus,
   {
-    label: string;
-    shortLabel: string;
-    description: string;
+    labelKey: string;
+    shortLabelKey: string;
+    descriptionKey: string;
     tone: "success" | "warning" | "error" | "info";
   }
 > = {
   synced: {
-    label: "已同步到远端",
-    shortLabel: "远端已同步",
-    description: "当前冰盒记录已通过远端 fridge-config 分支回读校验。",
+    labelKey: "iceBoxSync.synced.label",
+    shortLabelKey: "iceBoxSync.synced.shortLabel",
+    descriptionKey: "iceBoxSync.synced.description",
     tone: "success",
   },
   "pending-sync": {
-    label: "等待远端校验",
-    shortLabel: "待校验",
-    description: "本地记录已保留，但还没有通过远端 fridge-config 分支的存在性校验。",
+    labelKey: "iceBoxSync.pending.label",
+    shortLabelKey: "iceBoxSync.pending.shortLabel",
+    descriptionKey: "iceBoxSync.pending.description",
     tone: "warning",
   },
   "sync-failed": {
-    label: "远端校验失败",
-    shortLabel: "校验失败",
-    description: "冰盒已经创建到本地，但最近一次写入或回读远端 fridge-config 分支未通过校验。",
+    labelKey: "iceBoxSync.failed.label",
+    shortLabelKey: "iceBoxSync.failed.shortLabel",
+    descriptionKey: "iceBoxSync.failed.description",
     tone: "error",
   },
 };
@@ -128,14 +146,14 @@ function toTimestamp(value: string | null | undefined): number {
   return new Date(value).getTime();
 }
 
-const backupModeMeta: Record<IceBoxBackupMode, { label: string; description: string }> = {
+const backupModeMeta: Record<IceBoxBackupMode, { labelKey: string; descriptionKey: string }> = {
   "git-branch": {
-    label: "Git 直推",
-    description: "OpenClaw 直接把 .openclaw 同步到专属分支。",
+    labelKey: "backupMode.gitBranch.label",
+    descriptionKey: "backupMode.gitBranch.description",
   },
   "upload-token": {
-    label: "压缩包上传",
-    description: "OpenClaw 打包后上传到冰盒专属地址，由 Claw-Fridge 接手落盘。",
+    labelKey: "backupMode.uploadToken.label",
+    descriptionKey: "backupMode.uploadToken.description",
   },
 };
 
@@ -145,16 +163,30 @@ function delay(milliseconds: number) {
   });
 }
 
-export function getIceBoxStatusMeta(status: IceBoxStatus) {
-  return statusMeta[status];
+export function getIceBoxStatusMeta(status: IceBoxStatus, t: Translator) {
+  const meta = statusMeta[status];
+  return {
+    label: t(meta.labelKey),
+    description: t(meta.descriptionKey),
+  };
 }
 
-export function getIceBoxSyncStatusMeta(syncStatus: IceBoxSyncStatus) {
-  return syncStatusMeta[syncStatus];
+export function getIceBoxSyncStatusMeta(syncStatus: IceBoxSyncStatus, t: Translator) {
+  const meta = syncStatusMeta[syncStatus];
+  return {
+    label: t(meta.labelKey),
+    shortLabel: t(meta.shortLabelKey),
+    description: t(meta.descriptionKey),
+    tone: meta.tone,
+  };
 }
 
-export function getIceBoxBackupModeMeta(backupMode: IceBoxBackupMode) {
-  return backupModeMeta[backupMode];
+export function getIceBoxBackupModeMeta(backupMode: IceBoxBackupMode, t: Translator) {
+  const meta = backupModeMeta[backupMode];
+  return {
+    label: t(meta.labelKey),
+    description: t(meta.descriptionKey),
+  };
 }
 
 export function buildUploadUrl(origin: string, uploadPath: string | null) {
@@ -197,20 +229,20 @@ export function buildSkillLink(origin: string, skillConfig: IceBoxSkillConfig, o
   return `${origin}/skill?${params.toString()}`;
 }
 
-export function formatDateTime(value: string | null | undefined) {
+export function formatDateTime(value: string | null | undefined, locale = "en-US") {
   if (!value) {
     return "--";
   }
 
-  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+  return new Date(value).toLocaleString(locale, { hour12: false });
 }
 
-export function formatLastBackupTime(value: string | null) {
+export function formatLastBackupTime(value: string | null, t: Translator, locale = "en-US") {
   if (!value) {
-    return "尚未执行备份";
+    return t("detail.noRecentBackupTime");
   }
 
-  return formatDateTime(value);
+  return formatDateTime(value, locale);
 }
 
 export async function fetchIceBoxesSnapshot(items: IceBoxListItem[]): Promise<IceBoxListItem[]> {

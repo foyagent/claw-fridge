@@ -236,6 +236,177 @@
     "deleteIceBox": "删除冰盒",
     "commitHash": "Commit Hash",
     "restoreBadge": "恢复",
-    "dangerZone": "危险操作区"
+    "dangerZone": "危险操作区",
+    "scheduleDescriptionDaily": "每天 {time}（{timezone}）",
+    "scheduleDescriptionWeekly": "每周{weekday} {time}（{timezone}）",
+    "scheduleDescriptionMonthly": "每月 {day} 日 {time}（{timezone}）",
+    "scheduleDescriptionCustom": "自定义 Cron：{cron}（{timezone}）"
+  },
+  "gitConfig": {
+    "title": "Git 配置",
+    "description": "填仓库信息后直接测试；只有确认不存在 `{branch}` 时才显示初始化按钮。",
+    "repository": "仓库地址",
+    "repositoryPlaceholder": "~/projects/openclaw 或 {example}",
+    "authMethod": "认证方式",
+    "noAuth": "无需认证",
+    "username": "用户名",
+    "accessToken": "访问 Token",
+    "clearCredentials": "清除本地凭证",
+    "save": "保存配置",
+    "testing": "测试中...",
+    "testConnection": "测试连接",
+    "initialize": "初始化 {branch}",
+    "initializing": "初始化 {branch}中...",
+    "resetDraft": "还原草稿",
+    "saved": "已保存 Git 配置",
+    "credentialsCleared": "已清除本地凭证",
+    "connectionSuccess": "连接成功",
+    "connectionFailed": "连接失败",
+    "defaultBranch": "默认分支",
+    "branchStatus": "{branch} 分支：{status}",
+    "branchExists": "已存在，可直接进入冰盒列表",
+    "branchMissing": "不存在，先初始化",
+    "initializeHint": "连接已通过，但仓库里还没有 `{branch}`。点击上面的初始化按钮即可继续。",
+    "initSuccess": "初始化完成",
+    "initFailed": "初始化失败",
+    "targetBranch": "目标分支",
+    "commit": "提交",
+    "viewInitFileChanges": "查看初始化文件变更",
+    "fileCreated": "已创建",
+    "fileOverwritten": "已覆盖",
+    "fileKept": "已保留",
+    "notSaved": "未保存"
+  },
+  "fridgeInit": {
+    "title": "初始化",
+    "loadBranch": "载入 {branch}",
+    "initializeBranch": "初始化 {branch}",
+    "initializing": "{action}中...",
+    "initSuccess": "初始化完成",
+    "initFailed": "初始化失败"
+  },
+  "projectStatus": {
+    "kicker": "项目",
+    "initializedAt": "初始化时间：{value}"
+  },
+  "silentRefresh": {
+    "label": "正在静默更新：{targets}"
+  },
+  "iceBoxStatus": {
+    "healthy": {
+      "label": "运行正常",
+      "description": "最近一次备份已完成，当前状态稳定。"
+    },
+    "syncing": {
+      "label": "同步中",
+      "description": "正在执行备份或等待最新快照写入。"
+    },
+    "attention": {
+      "label": "需要关注",
+      "description": "最近一次备份异常，建议尽快检查。"
+    }
+  },
+  "iceBoxSync": {
+    "synced": {
+      "label": "已同步到远端",
+      "shortLabel": "远端已同步",
+      "description": "当前冰盒记录已通过远端 fridge-config 分支回读校验。"
+    },
+    "pending": {
+      "label": "等待远端校验",
+      "shortLabel": "待校验",
+      "description": "本地记录已保留，但还没有通过远端 fridge-config 分支的存在性校验。"
+    },
+    "failed": {
+      "label": "远端校验失败",
+      "shortLabel": "校验失败",
+      "description": "冰盒已经创建到本地，但最近一次写入或回读远端 fridge-config 分支未通过校验。"
+    }
+  },
+  "backupMode": {
+    "gitBranch": {
+      "label": "Git 直推",
+      "description": "OpenClaw 直接把 .openclaw 同步到专属分支。"
+    },
+    "uploadToken": {
+      "label": "压缩包上传",
+      "description": "OpenClaw 打包后上传到冰盒专属地址，由 Claw-Fridge 接手落盘。"
+    }
+  },
+  "relative": {
+    "minutes": "{count} 分钟",
+    "hours": "{count} 小时",
+    "days": "{count} 天"
+  },
+  "reminderPreset": {
+    "daily": {
+      "description": "适合活跃机器，漏一次也能很快补上。"
+    },
+    "every3Days": {
+      "description": "适合普通工作机，频率和打扰感比较平衡。"
+    },
+    "weekly": {
+      "description": "适合低频更新机器，默认节奏更克制。"
+    },
+    "custom": {
+      "description": "自己决定提醒间隔，适合特殊节奏。"
+    }
+  },
+  "reminder": {
+    "disabledConfig": "已关闭提醒",
+    "customConfig": "每 {intervalHours} 小时提醒一次 · 缓冲 {graceHours} 小时",
+    "presetConfig": "{label} · 缓冲 {graceHours} 小时",
+    "status": {
+      "disabled": "已关闭",
+      "disabledDescription": "当前冰盒不会自动提示补做备份。",
+      "waitingBaseline": "等待基线",
+      "waitingBaselineDescription": "还没有可计算的创建时间或备份时间，暂时无法安排提醒。",
+      "invalidTime": "时间异常",
+      "invalidTimeDescription": "当前基线时间无效，暂时无法计算下一次提醒。",
+      "waitingFirstBackup": "等待首备份",
+      "scheduled": "已安排",
+      "waitingFirstBackupDescription": "{duration} 后还没首个备份，就该提醒了。",
+      "scheduledDescription": "{duration} 后进入下一次提醒窗口。",
+      "firstBackupDue": "该做首备份了",
+      "due": "该提醒了",
+      "firstBackupOverdue": "首备份已逾期",
+      "overdue": "提醒已逾期",
+      "dueDescription": "提醒窗口已经打开，当前已到点 {duration}。",
+      "overdueDescription": "已经超过提醒窗口 {duration}，建议尽快补做备份。"
+    }
+  },
+  "skillPage": {
+    "errorKicker": "Skill 错误",
+    "errorTitle": "Skill 文档生成失败",
+    "errorHint": "先确认链接里的配置参数完整，再回到对应冰盒详情页重新打开 Skill 文档。",
+    "unknownError": "生成 Skill 文档时发生未知错误，请稍后重试。",
+    "backupMode": "备份",
+    "deliverable": "可交付内容",
+    "title": "{name} 的{mode} Skill 文档",
+    "description": "这个页面会输出可直接保存为 `SKILL.md` 的 Markdown 文档，同时把安装路径、Skill 链接、对应流程说明，以及是否携带 Git 凭证占位符都放齐。",
+    "iceBoxId": "ice-box-id",
+    "machineId": "machine-id",
+    "documentMode": "文档模式",
+    "installPath": "安装路径",
+    "gitAuth": "Git 认证",
+    "gitCredentialsIncluded": "Git 凭证占位符",
+    "included": "已携带",
+    "notIncluded": "未携带",
+    "scheduledBackup": "定时备份",
+    "uploadEncryption": "上传加密",
+    "notApplicable": "不适用",
+    "installGuide": "安装指导",
+    "createDirectory": "创建目录",
+    "saveFile": "保存文件",
+    "saveFileDescription": "将下方 Markdown 原文保存到 `{path}`。",
+    "reload": "重新加载",
+    "reloadDescription": "保持文件名为 `SKILL.md`，新开一个 OpenClaw 会话确认 Skill 被加载。",
+    "connectionInfo": "连接信息",
+    "gitRepository": "Git 仓库",
+    "targetBranch": "目标分支",
+    "skillLink": "Skill 链接",
+    "markdownTitle": "Markdown 原文",
+    "markdownDescription": "下面这段内容就是最终的 Skill 文档，可直接保存为 `SKILL.md`。分享前请注意里面是否包含专属上传地址、token 或加密参数。",
+    "readyToDeliver": "可直接交付"
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { IceBoxDetail } from "@/components/ice-boxes/ice-box-detail";
 import { IceBoxCreateForm } from "@/components/home/ice-box-create-form";
 import { useMounted } from "@/hooks/use-mounted";
@@ -59,6 +59,7 @@ function IceBoxListSkeleton() {
 
 export function IceBoxList() {
   const t = useTranslations();
+  const locale = useLocale();
   const mounted = useMounted();
   const gitConfig = useAppStore((state) => state.gitConfig);
   const gitConfigRepository = gitConfig.repository;
@@ -176,8 +177,8 @@ export function IceBoxList() {
       ) : (
         <div className="grid gap-4">
           {iceBoxes.map((iceBox) => {
-            const statusMeta = getIceBoxStatusMeta(iceBox.status);
-            const syncMeta = getIceBoxSyncStatusMeta(iceBox.syncStatus);
+            const statusMeta = getIceBoxStatusMeta(iceBox.status, t);
+            const syncMeta = getIceBoxSyncStatusMeta(iceBox.syncStatus, t);
             const isExpanded = activeExpandedId === iceBox.id;
 
             return (
@@ -203,7 +204,7 @@ export function IceBoxList() {
                   <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
                       <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("home.lastBackup")}</dt>
-                      <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatLastBackupTime(iceBox.lastBackupAt)}</dd>
+                      <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatLastBackupTime(iceBox.lastBackupAt, t, locale)}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
                       <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("home.remoteSync")}</dt>

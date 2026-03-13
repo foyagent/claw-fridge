@@ -10,23 +10,25 @@ const defaultReminderPreset: Exclude<IceBoxReminderPreset, "custom"> = "weekly";
 const defaultReminderGraceHours = 24;
 const defaultCustomReminderHours = 48;
 
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
 const reminderPresetMeta: Record<
   Exclude<IceBoxReminderPreset, "custom">,
-  { label: string; description: string; intervalHours: number }
+  { labelKey: string; descriptionKey: string; intervalHours: number }
 > = {
   daily: {
-    label: "每天一次",
-    description: "适合活跃机器，漏一次也能很快补上。",
+    labelKey: "detail.reminderPresetDaily",
+    descriptionKey: "reminderPreset.daily.description",
     intervalHours: 24,
   },
   "every-3-days": {
-    label: "每 3 天一次",
-    description: "适合普通工作机，频率和打扰感比较平衡。",
+    labelKey: "detail.reminderPresetEvery3Days",
+    descriptionKey: "reminderPreset.every3Days.description",
     intervalHours: 72,
   },
   weekly: {
-    label: "每周一次",
-    description: "适合低频更新机器，默认节奏更克制。",
+    labelKey: "detail.reminderPresetWeekly",
+    descriptionKey: "reminderPreset.weekly.description",
     intervalHours: 168,
   },
 };
@@ -59,33 +61,38 @@ function resolveReminderIntervalHours(preset: IceBoxReminderPreset, intervalHour
   return reminderPresetMeta[preset].intervalHours;
 }
 
-function formatRelativeDuration(milliseconds: number) {
+function formatRelativeDuration(milliseconds: number, t: Translator) {
   const absoluteMilliseconds = Math.abs(milliseconds);
   const totalHours = Math.round(absoluteMilliseconds / hourInMilliseconds);
 
   if (totalHours < 1) {
     const totalMinutes = Math.max(1, Math.round(absoluteMilliseconds / (60 * 1000)));
-    return `${totalMinutes} 分钟`;
+    return t("relative.minutes", { count: totalMinutes });
   }
 
   if (totalHours < 48) {
-    return `${totalHours} 小时`;
+    return t("relative.hours", { count: totalHours });
   }
 
   const totalDays = Math.round(totalHours / 24);
-  return `${Math.max(1, totalDays)} 天`;
+  return t("relative.days", { count: Math.max(1, totalDays) });
 }
 
-export function getIceBoxReminderPresetMeta(preset: IceBoxReminderPreset) {
+export function getIceBoxReminderPresetMeta(preset: IceBoxReminderPreset, t: Translator) {
   if (preset === "custom") {
     return {
-      label: "自定义",
-      description: "自己决定提醒间隔，适合特殊节奏。",
+      label: t("detail.reminderPresetCustom"),
+      description: t("reminderPreset.custom.description"),
       intervalHours: defaultCustomReminderHours,
     };
   }
 
-  return reminderPresetMeta[preset];
+  const meta = reminderPresetMeta[preset];
+  return {
+    label: t(meta.labelKey),
+    description: t(meta.descriptionKey),
+    intervalHours: meta.intervalHours,
+  };
 }
 
 export function createDefaultIceBoxReminderConfig(updatedAt: string): IceBoxReminderConfig {
@@ -118,16 +125,22 @@ export function normalizeIceBoxReminderConfig(
   };
 }
 
-export function formatIceBoxReminderConfig(reminder: IceBoxReminderConfig) {
+export function formatIceBoxReminderConfig(reminder: IceBoxReminderConfig, t: Translator) {
   if (!reminder.enabled) {
-    return "已关闭提醒";
+    return t("reminder.disabledConfig");
   }
 
   if (reminder.preset === "custom") {
-    return `每 ${reminder.intervalHours} 小时提醒一次 · 缓冲 ${reminder.graceHours} 小时`;
+    return t("reminder.customConfig", {
+      intervalHours: reminder.intervalHours,
+      graceHours: reminder.graceHours,
+    });
   }
 
-  return `${getIceBoxReminderPresetMeta(reminder.preset).label} · 缓冲 ${reminder.graceHours} 小时`;
+  return t("reminder.presetConfig", {
+    label: getIceBoxReminderPresetMeta(reminder.preset, t).label,
+    graceHours: reminder.graceHours,
+  });
 }
 
 export function calculateIceBoxReminderSnapshot({
@@ -135,14 +148,16 @@ export function calculateIceBoxReminderSnapshot({
   createdAt,
   lastBackupAt,
   now = new Date(),
+  t,
 }: {
   reminder: IceBoxReminderConfig;
   createdAt: string;
   lastBackupAt: string | null;
   now?: Date;
+  t: Translator;
 }): IceBoxReminderSnapshot {
   const normalizedReminder = normalizeIceBoxReminderConfig(reminder, reminder.updatedAt || createdAt);
-  const configLabel = formatIceBoxReminderConfig(normalizedReminder);
+  const configLabel = formatIceBoxReminderConfig(normalizedReminder, t);
   const basisAt = lastBackupAt || createdAt || null;
   const isFirstBackupPending = !lastBackupAt;
 
@@ -151,8 +166,8 @@ export function calculateIceBoxReminderSnapshot({
       reminder: normalizedReminder,
       configLabel,
       status: "disabled",
-      statusLabel: "已关闭",
-      statusDescription: "当前冰盒不会自动提示补做备份。",
+      statusLabel: t("reminder.status.disabled"),
+      statusDescription: t("reminder.status.disabledDescription"),
       basisAt,
       nextReminderAt: null,
       isFirstBackupPending,
@@ -164,8 +179,8 @@ export function calculateIceBoxReminderSnapshot({
       reminder: normalizedReminder,
       configLabel,
       status: "scheduled",
-      statusLabel: "等待基线",
-      statusDescription: "还没有可计算的创建时间或备份时间，暂时无法安排提醒。",
+      statusLabel: t("reminder.status.waitingBaseline"),
+      statusDescription: t("reminder.status.waitingBaselineDescription"),
       basisAt: null,
       nextReminderAt: null,
       isFirstBackupPending,
@@ -179,8 +194,8 @@ export function calculateIceBoxReminderSnapshot({
       reminder: normalizedReminder,
       configLabel,
       status: "scheduled",
-      statusLabel: "时间异常",
-      statusDescription: "当前基线时间无效，暂时无法计算下一次提醒。",
+      statusLabel: t("reminder.status.invalidTime"),
+      statusDescription: t("reminder.status.invalidTimeDescription"),
       basisAt,
       nextReminderAt: null,
       isFirstBackupPending,
@@ -197,10 +212,10 @@ export function calculateIceBoxReminderSnapshot({
       reminder: normalizedReminder,
       configLabel,
       status: "scheduled",
-      statusLabel: isFirstBackupPending ? "等待首备份" : "已安排",
+      statusLabel: isFirstBackupPending ? t("reminder.status.waitingFirstBackup") : t("reminder.status.scheduled"),
       statusDescription: isFirstBackupPending
-        ? `${formatRelativeDuration(remainingMilliseconds)} 后还没首个备份，就该提醒了。`
-        : `${formatRelativeDuration(remainingMilliseconds)} 后进入下一次提醒窗口。`,
+        ? t("reminder.status.waitingFirstBackupDescription", { duration: formatRelativeDuration(remainingMilliseconds, t) })
+        : t("reminder.status.scheduledDescription", { duration: formatRelativeDuration(remainingMilliseconds, t) }),
       basisAt,
       nextReminderAt,
       isFirstBackupPending,
@@ -218,15 +233,15 @@ export function calculateIceBoxReminderSnapshot({
     statusLabel:
       dueStatus === "due"
         ? isFirstBackupPending
-          ? "该做首备份了"
-          : "该提醒了"
+          ? t("reminder.status.firstBackupDue")
+          : t("reminder.status.due")
         : isFirstBackupPending
-          ? "首备份已逾期"
-          : "提醒已逾期",
+          ? t("reminder.status.firstBackupOverdue")
+          : t("reminder.status.overdue"),
     statusDescription:
       dueStatus === "due"
-        ? `提醒窗口已经打开，当前已到点 ${formatRelativeDuration(overdueMilliseconds)}。`
-        : `已经超过提醒窗口 ${formatRelativeDuration(overdueMilliseconds)}，建议尽快补做备份。`,
+        ? t("reminder.status.dueDescription", { duration: formatRelativeDuration(overdueMilliseconds, t) })
+        : t("reminder.status.overdueDescription", { duration: formatRelativeDuration(overdueMilliseconds, t) }),
     basisAt,
     nextReminderAt,
     isFirstBackupPending,

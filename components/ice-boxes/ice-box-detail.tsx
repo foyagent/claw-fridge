@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
@@ -198,6 +198,7 @@ function writeHistoryCache(iceBoxId: string, record: IceBoxHistoryCacheRecord) {
 
 export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: boolean }) {
   const t = useTranslations();
+  const locale = useLocale();
   const mounted = useMounted();
   const router = useRouter();
   const gitConfig = useAppStore((state) => state.gitConfig);
@@ -647,8 +648,8 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         nextPreset === "custom"
           ? baseReminder.preset === "custom"
             ? baseReminder.intervalHours
-            : getIceBoxReminderPresetMeta(nextPreset).intervalHours
-          : getIceBoxReminderPresetMeta(nextPreset).intervalHours;
+            : getIceBoxReminderPresetMeta(nextPreset, t).intervalHours
+          : getIceBoxReminderPresetMeta(nextPreset, t).intervalHours;
 
       return {
         ...baseReminder,
@@ -744,9 +745,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     );
   }
 
-  const statusMeta = getIceBoxStatusMeta(iceBox.status);
-  const syncMeta = getIceBoxSyncStatusMeta(iceBox.syncStatus);
-  const backupModeMeta = getIceBoxBackupModeMeta(iceBox.backupMode);
+  const statusMeta = getIceBoxStatusMeta(iceBox.status, t);
+  const syncMeta = getIceBoxSyncStatusMeta(iceBox.syncStatus, t);
+  const backupModeMeta = getIceBoxBackupModeMeta(iceBox.backupMode, t);
   const encryptionEnabled = isEncryptionEnabled(iceBox.skillConfig.encryption);
   const latestHistoryEntry = historyEntries[0] ?? null;
   const effectiveLastBackupAt = latestHistoryEntry?.committedAt ?? iceBox.lastBackupAt;
@@ -755,6 +756,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     reminder: effectiveReminder,
     createdAt: iceBox.createdAt,
     lastBackupAt: effectiveLastBackupAt,
+    t,
   });
   const origin = window.location.origin;
   const storedGitCredentials =
@@ -956,15 +958,15 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
               <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.lastRemoteSync")}</dt>
-              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt)}</dd>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt, locale)}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
               <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.createdAt")}</dt>
-              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.createdAt)}</dd>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.createdAt, locale)}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
               <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.updatedAt")}</dt>
-              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.updatedAt)}</dd>
+              <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.updatedAt, locale)}</dd>
             </div>
           </dl>
         </div>
@@ -974,7 +976,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           <div className="rounded-[24px] bg-white p-5 dark:bg-white/5">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("detail.lastBackupTime")}</p>
             <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-              {formatLastBackupTime(effectiveLastBackupAt)}
+              {formatLastBackupTime(effectiveLastBackupAt, t, locale)}
             </p>
           </div>
           <div className="grid gap-3 rounded-[24px] border border-zinc-200/80 bg-white p-4 dark:border-white/10 dark:bg-white/5">
@@ -998,7 +1000,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
                 <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.nextReminder")}</dt>
                 <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
-                  {formatDateTime(reminderSnapshot.nextReminderAt)}
+                  {formatDateTime(reminderSnapshot.nextReminderAt, locale)}
                 </dd>
               </div>
             </dl>
@@ -1091,7 +1093,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               </label>
             ) : (
               <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-950/50 dark:text-zinc-300">
-                {t("detail.reminderCurrentSelection", { label: getIceBoxReminderPresetMeta(effectiveReminder.preset).label, hours: effectiveReminder.intervalHours })}
+                {t("detail.reminderCurrentSelection", { label: getIceBoxReminderPresetMeta(effectiveReminder.preset, t).label, hours: effectiveReminder.intervalHours })}
               </div>
             )}
 
@@ -1267,7 +1269,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                     </div>
                   )}
                   <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-950/50 dark:text-zinc-300">
-                    {t("detail.currentSchedulePolicy", { description: buildScheduledBackupDescription(scheduledBackupInSkill) })}
+                    {t("detail.currentSchedulePolicy", { description: buildScheduledBackupDescription(scheduledBackupInSkill, t) })}
                   </div>
                 </>
               ) : (
@@ -1470,7 +1472,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                   <dl className="mt-4 grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
                       <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.commitTime")}</dt>
-                      <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(entry.committedAt)}</dd>
+                      <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(entry.committedAt, locale)}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
                       <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.commitAuthor")}</dt>
@@ -1534,7 +1536,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             <div>
               <p className="font-medium">{t("detail.restoringHistoryVersion", { commit: formatCommit(selectedHistoryEntry.commit) })}</p>
               <p className="mt-1 opacity-90">
-                {t("detail.restoreHistoryVersionMeta", { time: formatDateTime(selectedHistoryEntry.committedAt), author: selectedHistoryEntry.authorName, summary: selectedHistoryEntry.summary })}
+                {t("detail.restoreHistoryVersionMeta", { time: formatDateTime(selectedHistoryEntry.committedAt, locale), author: selectedHistoryEntry.authorName, summary: selectedHistoryEntry.summary })}
               </p>
             </div>
             <button
@@ -1665,7 +1667,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                   <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.targetSnapshot")}</dt>
                   <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
                     {restorePreview.selectedBranch?.lastBackupAt
-                      ? formatDateTime(restorePreview.selectedBranch.lastBackupAt)
+                      ? formatDateTime(restorePreview.selectedBranch.lastBackupAt, locale)
                       : t("detail.noRestorableSnapshot")}
                   </dd>
                 </div>
@@ -1701,7 +1703,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
                         </span>
                       </div>
                       <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {branchPreview.lastBackupAt ? formatDateTime(branchPreview.lastBackupAt) : t("detail.noRecentBackupTime")}
+                        {branchPreview.lastBackupAt ? formatDateTime(branchPreview.lastBackupAt, locale) : t("detail.noRecentBackupTime")}
                       </p>
                       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{branchPreview.summary ?? t("detail.noCommitSummary")}</p>
                     </div>

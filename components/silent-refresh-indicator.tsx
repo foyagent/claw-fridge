@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { useAppStore } from "@/store/app-store";
 
 export function SilentRefreshIndicator() {
+  const t = useTranslations();
   const silentRefreshingTargets = useAppStore((state) => state.silentRefreshingTargets);
 
   const label = useMemo(() => {
@@ -11,8 +13,8 @@ export function SilentRefreshIndicator() {
       return "";
     }
 
-    return `正在静默更新：${silentRefreshingTargets.join("、")}`;
-  }, [silentRefreshingTargets]);
+    return t("silentRefresh.label", { targets: silentRefreshingTargets.join(", ") });
+  }, [silentRefreshingTargets, t]);
 
   if (silentRefreshingTargets.length === 0) {
     return null;
