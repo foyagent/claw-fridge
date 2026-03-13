@@ -1,3 +1,4 @@
+import { tr } from "@/lib/client-translations";
 import type { OperationResultFields } from "@/types";
 
 export interface ApiResultPayload extends Partial<OperationResultFields> {
@@ -25,7 +26,7 @@ function normalizePayload<T extends ApiResultPayload>(payload: T): T {
     error:
       payload.error || message || details || errorCode || statusCode
         ? {
-            message: message ?? "请求失败。",
+            message: message ?? tr("clientApi.requestFailed"),
             details,
             code: errorCode,
             status: statusCode,
@@ -37,7 +38,7 @@ function normalizePayload<T extends ApiResultPayload>(payload: T): T {
 function buildDiagnosticLine(payload: ApiResultPayload | null | undefined) {
   const parts = [
     payload?.statusCode ? `HTTP ${payload.statusCode}` : null,
-    payload?.errorCode ? `错误码：${payload.errorCode}` : null,
+    payload?.errorCode ? tr("clientApi.errorCode", { code: payload.errorCode }) : null,
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(" · ") : null;
@@ -71,11 +72,11 @@ export function toOperationNotice(
 }
 
 export function toRequestFailureNotice(actionLabel: string, error: unknown): OperationNotice {
-  const details = error instanceof Error ? error.message : "未知错误";
+  const details = error instanceof Error ? error.message : tr("clientApi.unknownError");
 
   return {
-    message: `${actionLabel}暂时无法连接本地接口。`,
-    details: `${details}\n请确认 dev server 仍在运行，并查看终端里的 claw-fridge 服务日志。`,
+    message: tr("clientApi.localApiUnavailable", { action: actionLabel }),
+    details: `${details}\n${tr("clientApi.checkDevServer")}`,
     tone: "error",
   };
 }

@@ -30,6 +30,7 @@ import type {
   SyncIceBoxResult,
   SyncPendingIceBoxesResult,
 } from "@/types";
+import { tr } from "@/lib/client-translations";
 
 interface PersistedIceBoxStoreState {
   iceBoxes: IceBoxListItem[];
@@ -222,7 +223,7 @@ async function syncIceBoxWithRemote(
   const normalizedGitConfig = normalizeGitConfig(gitConfig);
 
   if (!normalizedGitConfig.repository) {
-    return createSyncIceBoxResult("请先在首页保存 Git 仓库配置，再同步到远端。");
+    return createSyncIceBoxResult(tr("clientIceBox.needGitConfigBeforeSync"));
   }
 
   try {
@@ -236,7 +237,7 @@ async function syncIceBoxWithRemote(
         };
         const createResult = await addIceBox(normalizedGitConfig, preparedItem);
 
-        if (!createResult.ok && createResult.message.includes("已存在")) {
+        if (!createResult.ok && createResult.message.includes(tr("clientGit.iceBoxExists", { id: item.id }))) {
           const syncResult = await syncIceBoxBranch(normalizedGitConfig, item.id);
           return {
             ok: syncResult.ok,
@@ -270,7 +271,7 @@ async function syncIceBoxWithRemote(
     if (!payload.ok) {
       return {
         ok: false,
-        message: payload.message || "同步冰盒到远端失败。",
+        message: payload.message || tr("clientIceBox.syncFailed"),
         details: payload.details,
         syncedAt: payload.syncedAt ?? new Date().toISOString(),
       };
@@ -285,7 +286,7 @@ async function syncIceBoxWithRemote(
       item: payload.item ? recordToListItem(payload.item) : undefined,
     };
   } catch (error) {
-    const notice = toRequestFailureNotice("同步到远端时", error);
+    const notice = toRequestFailureNotice(tr("clientIceBox.syncingToRemoteWhile"), error);
 
     return {
       ok: false,
@@ -311,7 +312,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         set({ isLoading: true, error: null });
 
         if (shouldShowSilentRefresh) {
-          useAppStore.getState().startSilentRefresh("冰盒列表");
+          useAppStore.getState().startSilentRefresh(tr("clientIceBox.iceBoxList"));
         }
 
         const normalizedGitConfig = normalizeGitConfig(gitConfig);
@@ -324,7 +325,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
             error: null,
           });
           if (shouldShowSilentRefresh) {
-            useAppStore.getState().finishSilentRefresh("冰盒列表");
+            useAppStore.getState().finishSilentRefresh(tr("clientIceBox.iceBoxList"));
           }
           return;
         }
@@ -346,7 +347,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               const payload = await readApiPayload<IceBoxesSyncResult>(response);
 
               if (!response.ok || !payload.ok) {
-                throw new Error(payload.details ?? payload.message ?? "加载冰盒列表失败。");
+                throw new Error(payload.details ?? payload.message ?? tr("clientIceBox.loadListFailed"));
               }
 
               return (payload.items ?? []).map(recordToListItem);
@@ -383,13 +384,13 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
           });
         } finally {
           if (shouldShowSilentRefresh) {
-            useAppStore.getState().finishSilentRefresh("冰盒列表");
+            useAppStore.getState().finishSilentRefresh(tr("clientIceBox.iceBoxList"));
           }
         }
       },
       createIceBox: async (input) => {
         if (get().isCreating) {
-          return createIceBoxResult("创建流程正在进行中，请稍后再试。");
+          return createIceBoxResult(tr("clientIceBox.creatingInProgress"));
         }
 
         set({ isCreating: true, error: null });
@@ -401,15 +402,15 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
           const createdAt = new Date().toISOString();
 
           if (!name) {
-            return createIceBoxResult("请先填写冰盒名称。");
+            return createIceBoxResult(tr("clientIceBox.fillName"));
           }
 
           if (!machineId) {
-            return createIceBoxResult("请提供合法的 machine-id，仅支持字母、数字和短横线。");
+            return createIceBoxResult(tr("clientIceBox.invalidMachineId"));
           }
 
           if (!normalizedGitConfig.repository) {
-            return createIceBoxResult("请先在首页保存 Git 仓库配置，再创建冰盒。");
+            return createIceBoxResult(tr("clientIceBox.needGitConfigBeforeCreate"));
           }
 
           const existingIceBoxes = get().iceBoxes;
@@ -417,11 +418,11 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
           const branch = `${iceBoxBranchPrefix}/${machineId}`;
 
           if (existingIceBoxes.some((existingItem) => existingItem.id === iceBoxId || existingItem.machineId === machineId)) {
-            return createIceBoxResult(`machine-id \`${machineId}\` 已存在，请换一个。`);
+            return createIceBoxResult(tr("clientIceBox.machineIdExists", { machineId }));
           }
 
           if (existingIceBoxes.some((existingItem) => existingItem.branch === branch)) {
-            return createIceBoxResult(`备份分支 \`${branch}\` 已被占用，请换一个 machine-id。`);
+            return createIceBoxResult(tr("clientIceBox.branchExists", { branch }));
           }
 
           let uploadPath: string | null = null;
@@ -444,7 +445,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               const payload = await readApiPayload<CreateUploadTokenResult>(response);
 
               if (!response.ok) {
-                const notice = toOperationNotice(payload, "生成上传 token 失败。");
+                const notice = toOperationNotice(payload, tr("clientIceBox.generateUploadTokenFailed"));
 
                 return createIceBoxResult(notice.message, notice.details);
               }
@@ -456,7 +457,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               uploadPath = payload.uploadPath;
               uploadToken = payload.uploadToken;
             } catch (error) {
-              const notice = toRequestFailureNotice("生成上传地址时", error);
+              const notice = toRequestFailureNotice(tr("clientIceBox.generatingUploadUrlWhile"), error);
 
               return createIceBoxResult(notice.message, notice.details);
             }
@@ -507,7 +508,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
 
           if (syncResult.ok) {
             const syncedItem = normalizeIceBoxItem(
-              syncResult.item ?? markIceBoxSyncState(localItem, "sync-failed", null, "远端已返回成功，但缺少校验后的冰盒记录。"),
+              syncResult.item ?? markIceBoxSyncState(localItem, "sync-failed", null, tr("clientIceBox.remoteMissingValidatedRecord")),
             );
 
             set((state) => ({
@@ -518,8 +519,8 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
 
             return {
               ok: true,
-              message: "冰盒已创建，并已通过远端回读校验。",
-              details: syncResult.commit ? `配置提交：${syncResult.commit.slice(0, 8)}` : undefined,
+              message: tr("clientIceBox.createdAndVerified"),
+              details: syncResult.commit ? tr("clientIceBox.configCommit", { commit: syncResult.commit.slice(0, 8) }) : undefined,
               createdAt,
               item: syncedItem,
             };
@@ -535,7 +536,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
 
           return {
             ok: true,
-            message: "冰盒已创建到本地，但尚未通过远端校验，可稍后重试同步。",
+            message: tr("clientIceBox.createdLocallyPendingVerify"),
             details: syncResult.details ?? syncResult.message,
             createdAt,
             item: failedItem,
@@ -548,7 +549,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         const target = get().iceBoxes.find((item) => item.id === id);
 
         if (!target) {
-          return createSyncIceBoxResult("冰盒不存在，可能尚未加载到本地缓存。", `ice-box-id: ${id}`);
+          return createSyncIceBoxResult(tr("clientIceBox.missingFromCache"), `ice-box-id: ${id}`);
         }
 
         const syncingAt = new Date().toISOString();
@@ -569,7 +570,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
                 { ...target, updatedAt: syncingAt },
                 "sync-failed",
                 target.lastSyncAt,
-                "远端已返回成功，但缺少校验后的冰盒记录。",
+                tr("clientIceBox.remoteMissingValidatedRecord"),
               ),
           );
 
@@ -581,7 +582,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
           return {
             ...syncResult,
             item: syncedItem,
-            message: syncResult.message || "已通过远端回读校验。",
+            message: syncResult.message || tr("clientIceBox.verifiedByRemote"),
           };
         }
 
@@ -608,7 +609,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         if (pendingIceBoxes.length === 0) {
           return {
             ok: true,
-            message: "当前没有待同步的冰盒。",
+            message: tr("clientIceBox.noPendingSync"),
             syncedAt: new Date().toISOString(),
             syncedCount: 0,
             failedIds: [],
@@ -633,7 +634,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         if (failedIds.length === 0) {
           return {
             ok: true,
-            message: `已同步全部 ${syncedCount} 个待同步冰盒。`,
+            message: tr("clientIceBox.syncedAllPending", { count: syncedCount }),
             syncedAt: new Date().toISOString(),
             syncedCount,
             failedIds,
@@ -642,8 +643,8 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
 
         return createSyncPendingIceBoxesResult(
           syncedCount > 0
-            ? `已同步 ${syncedCount} 个冰盒，仍有 ${failedIds.length} 个需要稍后重试。`
-            : "待同步冰盒暂未成功同步到远端。",
+            ? tr("clientIceBox.partialSync", { syncedCount, failedCount: failedIds.length })
+            : tr("clientIceBox.pendingSyncNoneSucceeded"),
           syncedCount,
           failedIds,
           failureMessages.join("\n"),
@@ -715,7 +716,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
                       item,
                       "sync-failed",
                       item.lastSyncAt,
-                      error instanceof Error ? error.message : "同步提醒配置失败。",
+                      error instanceof Error ? error.message : tr("clientIceBox.syncReminderFailed"),
                     )
                   : item,
               ),
@@ -790,7 +791,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
                       item,
                       "sync-failed",
                       item.lastSyncAt,
-                      error instanceof Error ? error.message : "同步提醒配置失败。",
+                      error instanceof Error ? error.message : tr("clientIceBox.syncReminderFailed"),
                     )
                   : item,
               ),
@@ -825,7 +826,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         const target = get().iceBoxes.find((item) => item.id === id);
 
         if (!target) {
-          throw new Error("冰盒不存在，可能已经被删除或尚未同步到本地。");
+          throw new Error(tr("clientIceBox.deletedOrNotSynced"));
         }
 
         if (gitConfig?.repository) {

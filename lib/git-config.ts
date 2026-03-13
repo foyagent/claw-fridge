@@ -7,6 +7,7 @@ import type {
   GitRepositoryKind,
   GitSshKeyAuthConfig,
 } from "@/types";
+import { tr } from "@/lib/client-translations";
 
 export const DEFAULT_GIT_CONFIG: GitRepositoryConfig = {
   repository: "",
@@ -137,7 +138,7 @@ export function detectRepositoryKind(repository: string): GitRepositoryKind {
 export function getGitPlatformLabel(platform: GitRepositoryPlatform): string {
   switch (platform) {
     case "local":
-      return "本地仓库";
+      return tr("clientGit.localRepository");
     case "github":
       return "GitHub";
     case "gitlab":
@@ -145,7 +146,7 @@ export function getGitPlatformLabel(platform: GitRepositoryPlatform): string {
     case "gitea":
       return "Gitea";
     default:
-      return "通用 Git 服务";
+      return tr("clientGit.genericGitService");
   }
 }
 
@@ -169,18 +170,18 @@ export function getGitUsernamePlaceholder(
   const platform = detectRepositoryPlatform(repository);
 
   if (authMethod === "ssh-key") {
-    return platform === "generic" ? "git（若自托管另有要求，改成对应 SSH 用户）" : "git";
+    return platform === "generic" ? tr("clientGit.usernamePlaceholder.sshGeneric") : "git";
   }
 
   switch (platform) {
     case "github":
-      return "GitHub 用户名（留空则尝试 git）";
+      return tr("clientGit.usernamePlaceholder.github");
     case "gitlab":
-      return "oauth2 或 Deploy Token 用户名";
+      return tr("clientGit.usernamePlaceholder.gitlab");
     case "gitea":
-      return "Gitea 用户名（留空则尝试 git）";
+      return tr("clientGit.usernamePlaceholder.gitea");
     default:
-      return "平台用户名 / token 用户名（留空则尝试 git）";
+      return tr("clientGit.usernamePlaceholder.generic");
   }
 }
 
@@ -236,27 +237,27 @@ export function getGitPlatformAuthHelp(
     switch (platform) {
       case "github":
         return [
-          "GitHub HTTPS 建议使用 PAT / Fine-grained PAT；token 填在密码位置。",
-          "用户名优先填 GitHub 用户名；Fine-grained token 记得给目标仓库的内容读写权限。",
-          `示例地址：${examples.https}`,
+          tr("clientGit.authHelp.githubHttps1"),
+          tr("clientGit.authHelp.githubHttps2"),
+          tr("clientGit.authHelp.example", { example: examples.https }),
         ];
       case "gitlab":
         return [
-          "GitLab HTTPS 常用 `oauth2` + PAT；如果用 Deploy Token，请改成 GitLab 生成的专用用户名。",
-          "开启 2FA 的 GitLab 账户不能再用账号密码，必须改成 token。",
-          `示例地址：${examples.https}`,
+          tr("clientGit.authHelp.gitlabHttps1"),
+          tr("clientGit.authHelp.gitlabHttps2"),
+          tr("clientGit.authHelp.example", { example: examples.https }),
         ];
       case "gitea":
         return [
-          "Gitea HTTPS 一般使用 Access Token / PAT 作为密码，用户名建议填你的 Gitea 账号名。",
-          "自托管 Gitea 如果改过域名或端口，以实例实际地址为准。",
-          `示例地址：${examples.https}`,
+          tr("clientGit.authHelp.giteaHttps1"),
+          tr("clientGit.authHelp.giteaHttps2"),
+          tr("clientGit.authHelp.example", { example: examples.https }),
         ];
       default:
         return [
-          "通用 HTTPS 仓库通常用 token 代替密码；用户名可能是账号名、`git` 或服务端指定的 token 用户名。",
-          "如果是自托管服务，先确认它支持 PAT / Basic Auth 推送。",
-          `示例地址：${examples.https}`,
+          tr("clientGit.authHelp.genericHttps1"),
+          tr("clientGit.authHelp.genericHttps2"),
+          tr("clientGit.authHelp.example", { example: examples.https }),
         ];
     }
   }
@@ -266,15 +267,15 @@ export function getGitPlatformAuthHelp(
     case "gitlab":
     case "gitea":
       return [
-        `${getGitPlatformLabel(platform)} SSH 通常使用 \`git\` 作为用户名；仓库地址既支持 scp 风格，也支持 \`ssh://\`。`,
-        "如果你使用自定义 SSH 端口，请改成 `ssh://git@host:port/owner/repo.git` 这种完整格式。",
-        `示例地址：${examples.ssh}`,
+        tr("clientGit.authHelp.platformSsh1", { platform: getGitPlatformLabel(platform) }),
+        tr("clientGit.authHelp.platformSsh2"),
+        tr("clientGit.authHelp.example", { example: examples.ssh }),
       ];
     default:
       return [
-        "通用 SSH 仓库默认用户名通常是 `git`，但自托管实例也可能要求 `gitlab`、`forgejo` 或你的系统账号。",
-        "标准 scp 格式是 `git@host:owner/repo.git`；有自定义端口时请使用 `ssh://user@host:port/path.git`。",
-        `示例地址：${examples.ssh}`,
+        tr("clientGit.authHelp.genericSsh1"),
+        tr("clientGit.authHelp.genericSsh2"),
+        tr("clientGit.authHelp.example", { example: examples.ssh }),
       ];
   }
 }

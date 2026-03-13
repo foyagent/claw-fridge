@@ -14,6 +14,7 @@ import type {
   IceBoxSyncResult,
   IceBoxHistoryEntry,
 } from "@/types";
+import { tr } from "@/lib/client-translations";
 
 const gitCommitAuthorName = "Claw Fridge";
 const gitCommitAuthorEmail = "claw-fridge@local";
@@ -52,7 +53,7 @@ function formatErrorMessage(error: unknown) {
     return error.message;
   }
 
-  return String(error || "未知错误");
+  return String(error || tr("clientApi.unknownError"));
 }
 
 /**
@@ -159,7 +160,7 @@ export class IceBoxHistoryBranchMissingError extends Error {
   branch: string;
 
   constructor(branch: string) {
-    super(`冰盒分支 ${branch} 不存在。`);
+    super(tr("clientGit.historyBranchMissing", { branch }));
     this.name = "IceBoxHistoryBranchMissingError";
     this.branch = branch;
   }
@@ -187,25 +188,25 @@ function classifyGitError(repository: string, error: unknown) {
 
   if (isSshRepository(repository)) {
     return {
-      message: "浏览器模式暂不支持 SSH 仓库，请改用 HTTPS + Token。",
+      message: tr("clientGit.browserNoSsh"),
       details: [message, ...getGitPlatformAuthHelp(repository, "ssh-key")].join("\n"),
     };
   }
 
   if (lower.includes("cors") || lower.includes("failed to fetch") || lower.includes("network request failed")) {
     return {
-      message: "浏览器无法直接访问这个 Git 远程地址，可能被 CORS 或网络策略拦住了。",
+      message: tr("clientGit.browserCannotReachRepo"),
       details: [
         message,
-        "如果这是 GitHub，通常可直接访问；若是自托管 Git/GitLab/Gitea，请检查是否允许跨域。",
-        "若服务端没开 CORS，需要加一个 CORS proxy，或继续保留后端 API 作为兜底。",
+        tr("clientGit.corsHelp1"),
+        tr("clientGit.corsHelp2"),
       ].join("\n"),
     };
   }
 
   if (lower.includes("401") || lower.includes("403") || lower.includes("authentication") || lower.includes("auth")) {
     return {
-      message: "Git 仓库认证失败，请检查用户名和 Token。",
+      message: tr("clientGit.authFailed"),
       details: [message, ...getGitPlatformAuthHelp(repository, "https-token")].join("\n"),
     };
   }
@@ -341,27 +342,27 @@ async function prepareRepoDir(repository: string, options?: { wipe?: boolean; ke
 
 function requireRemoteHttps(config: GitRepositoryConfig): GitConfigTestResult | null {
   if (!config.repository) {
-    return buildGitConfigErrorResult("请先填写 Git 仓库地址。");
+    return buildGitConfigErrorResult(tr("clientGit.fillRepository"));
   }
 
   if (config.kind === "local") {
-    return buildGitConfigErrorResult("浏览器模式不支持本地路径仓库，请改用远程 HTTPS 仓库。", config.repository);
+    return buildGitConfigErrorResult(tr("clientGit.browserNoLocalRepo"), config.repository);
   }
 
   if (isSshRepository(config.repository)) {
     return buildGitConfigErrorResult(
-      "浏览器模式不支持 SSH 仓库，请改用 HTTPS + Token。",
+      tr("clientGit.browserNoSsh"),
       getGitPlatformAuthHelp(config.repository, "ssh-key").join("\n"),
     );
   }
 
   if (!isHttpsRepository(config.repository)) {
-    return buildGitConfigErrorResult("当前只支持 HTTPS 远程仓库。", config.repository);
+    return buildGitConfigErrorResult(tr("clientGit.onlyHttpsRepo"), config.repository);
   }
 
   if (config.auth.method === "https-token" && !config.auth.token.trim()) {
     return buildGitConfigErrorResult(
-      "请填写 HTTPS Token。",
+      tr("clientGit.fillHttpsToken"),
       getGitPlatformAuthHelp(config.repository, "https-token").join("\n"),
     );
   }
@@ -509,7 +510,7 @@ async function loadFridgeConfigRepo(config: GitRepositoryConfig, allowMissingBra
       return { fs, dir, onAuth, branchExists: false };
     }
 
-    throw new Error(`远程分支 ${fridgeConfigBranch} 不存在，请先初始化仓库配置。`);
+    throw new Error(tr("clientGit.remoteBranchMissing", { branch: fridgeConfigBranch }));
   }
 
   await git.clone({
@@ -618,8 +619,8 @@ export async function testGitConnection(input: GitRepositoryConfig): Promise<Git
       ok: true,
       checkedAt: new Date().toISOString(),
       target: "remote-https",
-      message: "浏览器已成功连上远程仓库。",
-      details: `地址：${config.repository}`,
+      message: tr("clientGit.connected"),
+      details: tr("clientGit.address", { repository: config.repository }),
       defaultBranch,
       hasFridgeConfig: branchRefs.some((ref) => ref.ref === `refs/heads/${fridgeConfigBranch}`),
     };
@@ -696,8 +697,8 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
       return {
         ok: true,
         initializedAt,
-        message: "`fridge-config` 分支已存在，已保留现有配置。",
-        details: files.map((file) => `${file.path}：已保留`).join("\n"),
+        message: tr("clientGit.fridgeConfigExists"),
+        details: files.map((file) => `${file.path}: ${tr("gitConfig.fileKept")}`).join("\n"),
         branch: fridgeConfigBranch,
         root: config.repository,
         files: files.map((file) => ({ ...file, status: "unchanged" })),
@@ -726,9 +727,9 @@ export async function initFridgeConfig(input: GitRepositoryConfig): Promise<GitC
     return {
       ok: true,
       initializedAt,
-      message: branchExists ? "已载入 fridge-config 分支，并保留已有配置。" : "已在浏览器里初始化 fridge-config 分支并推送到远程仓库。",
+      message: branchExists ? tr("clientGit.loadedFridgeConfig") : tr("clientGit.initializedFridgeConfig"),
       details: files
-        .map((file) => `${file.path}：${file.status === "created" ? "已创建" : file.status === "overwritten" ? "已覆盖" : "已保留"}`)
+        .map((file) => `${file.path}: ${file.status === "created" ? tr("gitConfig.fileCreated") : file.status === "overwritten" ? tr("gitConfig.fileOverwritten") : tr("gitConfig.fileKept")}`)
         .join("\n"),
       branch: fridgeConfigBranch,
       root: config.repository,
@@ -786,7 +787,7 @@ export async function addIceBox(input: GitRepositoryConfig, item: IceBoxRecord):
       return {
         ok: false,
         syncedAt,
-        message: `冰盒 ${item.id} 已存在。`,
+        message: tr("clientGit.iceBoxExists", { id: item.id }),
         items: iceBoxesFile.items,
       };
     }
@@ -800,7 +801,7 @@ export async function addIceBox(input: GitRepositoryConfig, item: IceBoxRecord):
     return {
       ok: true,
       syncedAt,
-      message: `冰盒 ${item.name} 已同步到远端。`,
+      message: tr("clientGit.iceBoxSynced", { name: item.name }),
       items: iceBoxesFile.items,
       item: createdItem,
       commit,
@@ -829,7 +830,7 @@ export async function updateIceBox(
     const index = iceBoxesFile.items.findIndex((item) => item.id === id);
 
     if (index < 0) {
-      return { ok: false, syncedAt, message: `冰盒 ${id} 不存在。`, items: iceBoxesFile.items };
+      return { ok: false, syncedAt, message: tr("clientGit.iceBoxMissing", { id }), items: iceBoxesFile.items };
     }
 
     iceBoxesFile.items[index] = {
@@ -846,7 +847,7 @@ export async function updateIceBox(
     return {
       ok: true,
       syncedAt,
-      message: `冰盒 ${id} 已更新到远端。`,
+      message: tr("clientGit.iceBoxUpdated", { id }),
       items: iceBoxesFile.items,
       item: iceBoxesFile.items[index],
       commit,
@@ -974,7 +975,7 @@ export async function getIceBoxHistory(
 
     const classified = classifyGitError(config.repository, error);
 
-    if (classified.message.includes("浏览器模式暂不支持") || classified.message.includes("浏览器无法直接访问")) {
+    if (classified.message.includes(tr("clientGit.browserNoSsh")) || classified.message.includes(tr("clientGit.browserCannotReachRepo"))) {
       throw buildFrontendFallbackError(config.repository, error);
     }
 
