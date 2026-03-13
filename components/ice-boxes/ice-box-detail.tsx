@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
 import { useMounted } from "@/hooks/use-mounted";
 import { isEncryptionEnabled } from "@/lib/backup-encryption";
@@ -206,7 +206,17 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
   const [reminderNotice, setReminderNotice] = useState<string | null>(null);
   const [syncNotice, setSyncNotice] = useState<OperationNotice | null>(null);
   const [isSyncingToRemote, setIsSyncingToRemote] = useState(false);
+  const historyEntriesRef = useRef<IceBoxHistoryEntry[]>([]);
+  const historyViewStateRef = useRef<IceBoxHistoryViewState>("idle");
   const hasCachedIceBox = iceBoxes.some((item) => item.id === id);
+
+  useEffect(() => {
+    historyEntriesRef.current = historyEntries;
+  }, [historyEntries]);
+
+  useEffect(() => {
+    historyViewStateRef.current = historyViewState;
+  }, [historyViewState]);
 
   useEffect(() => {
     if (!mounted || hasLoaded) {
@@ -360,7 +370,8 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
   }
 
   const loadHistory = useCallback(async (targetIceBoxId: string, machineId: string, branch: string) => {
-    const shouldShowSilentRefresh = historyEntries.length > 0 || historyViewState !== "idle";
+    const shouldShowSilentRefresh =
+      historyEntriesRef.current.length > 0 || historyViewStateRef.current !== "idle";
 
     setIsLoadingHistory(true);
     setHistoryError(null);
@@ -438,15 +449,28 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         finishSilentRefresh("备份历史");
       }
     }
-  }, [finishSilentRefresh, gitConfig, historyEntries.length, historyViewState, startSilentRefresh, syncIceBoxBackupState]);
+  }, [finishSilentRefresh, gitConfig, startSilentRefresh, syncIceBoxBackupState]);
+
+  const iceBoxId = iceBox?.id;
+  const iceBoxMachineId = iceBox?.machineId;
+  const iceBoxBranch = iceBox?.branch;
 
   useEffect(() => {
-    if (!mounted || !iceBox || !hasConfiguredRepository || isLoadingHistory) {
+    if (!mounted || !iceBoxId || !iceBoxMachineId || !iceBoxBranch || !hasConfiguredRepository || isLoadingHistory) {
       return;
     }
 
-    void loadHistory(iceBox.id, iceBox.machineId, iceBox.branch);
-  }, [hasConfiguredRepository, historyRefreshNonce, iceBox, isLoadingHistory, loadHistory, mounted]);
+    void loadHistory(iceBoxId, iceBoxMachineId, iceBoxBranch);
+  }, [
+    hasConfiguredRepository,
+    historyRefreshNonce,
+    iceBoxBranch,
+    iceBoxId,
+    iceBoxMachineId,
+    isLoadingHistory,
+    loadHistory,
+    mounted,
+  ]);
 
   function handleSelectHistoryEntry(entry: IceBoxHistoryEntry) {
     setSelectedHistoryEntry(entry);

@@ -833,6 +833,17 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
         }
       },
       syncIceBoxBackupState: (id, lastBackupAt) => {
+        const target = get().iceBoxes.find((item) => item.id === id);
+
+        if (!target) {
+          return;
+        }
+
+        const nextStatus = lastBackupAt ? "healthy" : "attention";
+        if (target.lastBackupAt === lastBackupAt && target.status === nextStatus) {
+          return;
+        }
+
         set((state) => ({
           iceBoxes: state.iceBoxes.map((item) => {
             if (item.id !== id) {
