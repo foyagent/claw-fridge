@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
+import { getApiRequestHeaders, readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
 import { useMounted } from "@/hooks/use-mounted";
 import { isEncryptionEnabled } from "@/lib/backup-encryption";
 import {
@@ -461,9 +461,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
           const response = await fetch(`/api/ice-boxes/${targetIceBoxId}/history`, {
             method: "POST",
-            headers: {
+            headers: getApiRequestHeaders({
               "Content-Type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               machineId,
               branch,
@@ -557,9 +557,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     try {
       const response = await fetch(`/api/ice-boxes/${iceBox.id}/restore`, {
         method: "POST",
-        headers: {
+        headers: getApiRequestHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
           action: "preview",
           backupMode: iceBox.backupMode,
@@ -600,9 +600,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     try {
       const response = await fetch(`/api/ice-boxes/${iceBox.id}/restore`, {
         method: "POST",
-        headers: {
+        headers: getApiRequestHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
           action: "restore",
           backupMode: iceBox.backupMode,

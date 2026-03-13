@@ -15,6 +15,7 @@ import type {
   IceBoxHistoryEntry,
 } from "@/types";
 import { tr } from "@/lib/client-translations";
+import { getApiRequestHeaders } from "@/lib/api-client";
 
 const gitCommitAuthorName = "Claw Fridge";
 const gitCommitAuthorEmail = "claw-fridge@local";
@@ -103,7 +104,7 @@ function createHttpAdapter(onAuth?: git.AuthCallback): {
 
       const response = await fetch("/api/git/proxy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getApiRequestHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           url: req.url,
           method: req.method || "GET",

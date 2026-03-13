@@ -1,6 +1,26 @@
 import { tr } from "@/lib/client-translations";
 import type { OperationResultFields } from "@/types";
 
+function readLocaleFromCookie() {
+  if (typeof document === "undefined") {
+    return "zh";
+  }
+
+  const match = document.cookie.match(/(?:^|; )claw-fridge-locale=([^;]+)/);
+  const locale = match ? decodeURIComponent(match[1]) : "zh";
+  return locale.toLowerCase().includes("en") ? "en" : "zh";
+}
+
+function mergeHeaders(headers?: HeadersInit) {
+  const merged = new Headers(headers ?? undefined);
+  merged.set("Accept-Language", readLocaleFromCookie());
+  return merged;
+}
+
+export function getApiRequestHeaders(headers?: HeadersInit) {
+  return mergeHeaders(headers);
+}
+
 export interface ApiResultPayload extends Partial<OperationResultFields> {
   ok?: boolean;
 }

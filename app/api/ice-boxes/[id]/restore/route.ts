@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createFailureResponse, normalizeOperationResult, getErrorDetails, resolveResultStatus, ErrorCodes } from "@/lib/api-response";
 import { previewIceBoxRestore, restoreIceBoxBackup } from "@/lib/ice-box-restore.server";
 import { logServerError } from "@/lib/server-logger";
+import { localizeOperationResult, translateApiText } from "@/lib/server-translations";
 import type { RestoreExecuteRequest, RestorePreviewRequest, RestoreRequest } from "@/types";
 
 export const runtime = "nodejs";
@@ -28,8 +29,8 @@ export async function POST(
     if (!isRestoreRequest(body)) {
       return createFailureResponse({
         status: 400,
-        message: "无效的恢复请求。",
-        details: "请求体必须包含合法的 action，并补齐恢复所需字段。",
+        message: (await translateApiText("无效的恢复请求。", request))!,
+        details: await translateApiText("请求体必须包含合法的 action，并补齐恢复所需字段。", request),
         errorCode: ErrorCodes.INVALID_REQUEST,
         restoredAt: new Date().toISOString(),
       });
@@ -56,7 +57,7 @@ export async function POST(
         targetRootDir: previewRequest.targetRootDir,
       });
 
-      return NextResponse.json(result, {
+      return NextResponse.json(await localizeOperationResult(result, request), {
         status: resolveResultStatus(result),
       });
     }
@@ -74,7 +75,7 @@ export async function POST(
       replaceExisting: restoreRequest.replaceExisting,
     });
 
-    return NextResponse.json(normalizeOperationResult(result, result.requiresOverwriteConfirmation ? 409 : 400), {
+    return NextResponse.json(await localizeOperationResult(normalizeOperationResult(result, result.requiresOverwriteConfirmation ? 409 : 400), request), {
       status: resolveResultStatus(result, result.requiresOverwriteConfirmation ? 409 : 400),
     });
   } catch (error) {
@@ -82,8 +83,8 @@ export async function POST(
 
     return createFailureResponse({
       status: 500,
-      message: `冰盒 \`${id}\` 恢复接口执行失败。`,
-      details: getErrorDetails(error),
+      message: (await translateApiText(`冰盒 \`${id}\` 恢复接口执行失败。`, request))!,
+      details: await translateApiText(getErrorDetails(error), request),
       errorCode: ErrorCodes.RESTORE_EXECUTE_FAILED,
       restoredAt: new Date().toISOString(),
     });

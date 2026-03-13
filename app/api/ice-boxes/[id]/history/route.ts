@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createFailureResponse, normalizeOperationResult, getErrorDetails, resolveResultStatus } from "@/lib/api-response";
 import { listIceBoxBackupHistory } from "@/lib/ice-box-restore.server";
 import { logServerError } from "@/lib/server-logger";
+import { localizeOperationResult, translateApiText } from "@/lib/server-translations";
 import type { GitRepositoryConfig } from "@/types";
 
 export const runtime = "nodejs";
@@ -29,8 +30,8 @@ export async function POST(
     if (!isHistoryRequest(body)) {
       return createFailureResponse({
         status: 400,
-        message: "无效的历史记录请求。",
-        details: "请求体必须包含有效的 machine-id、branch 和 gitConfig 信息。",
+        message: (await translateApiText("无效的历史记录请求。", request))!,
+        details: await translateApiText("请求体必须包含有效的 machine-id、branch 和 gitConfig 信息。", request),
         errorCode: "invalid_history_payload",
         fetchedAt: new Date().toISOString(),
       });
@@ -53,7 +54,7 @@ export async function POST(
       limit: body.limit,
     });
 
-    return NextResponse.json(normalizeOperationResult(result), {
+    return NextResponse.json(await localizeOperationResult(normalizeOperationResult(result), request), {
       status: resolveResultStatus(result),
     });
   } catch (error) {
@@ -61,8 +62,8 @@ export async function POST(
 
     return createFailureResponse({
       status: 500,
-      message: `冰盒 \`${id}\` 备份历史接口执行失败。`,
-      details: getErrorDetails(error),
+      message: (await translateApiText(`冰盒 \`${id}\` 备份历史接口执行失败。`, request))!,
+      details: await translateApiText(getErrorDetails(error), request),
       errorCode: "ice_box_history_route_failed",
       fetchedAt: new Date().toISOString(),
     });

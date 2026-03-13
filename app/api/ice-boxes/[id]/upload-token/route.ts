@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createFailureResponse, normalizeOperationResult, getErrorDetails, resolveResultStatus, ErrorCodes } from "@/lib/api-response";
 import { createIceBoxUploadToken } from "@/lib/ice-box-upload.server";
 import { logServerError } from "@/lib/server-logger";
+import { localizeOperationResult, translateApiText } from "@/lib/server-translations";
 import type { CreateUploadTokenInput } from "@/types";
 
 export const runtime = "nodejs";
@@ -17,8 +18,8 @@ export async function POST(
     if (!body || typeof body !== "object") {
       return createFailureResponse({
         status: 400,
-        message: "无效的上传 token 请求。",
-        details: "请求体必须包含合法的冰盒名称、machine-id 和 Git 配置。",
+        message: (await translateApiText("无效的上传 token 请求。", request))!,
+        details: await translateApiText("请求体必须包含合法的冰盒名称、machine-id 和 Git 配置。", request),
         errorCode: ErrorCodes.INVALID_REQUEST,
         createdAt: new Date().toISOString(),
       });
@@ -48,7 +49,7 @@ export async function POST(
       expiresInHours: body.expiresInHours,
     });
 
-    return NextResponse.json(normalizeOperationResult(result), {
+    return NextResponse.json(await localizeOperationResult(normalizeOperationResult(result), request), {
       status: resolveResultStatus(result),
     });
   } catch (error) {
@@ -56,8 +57,8 @@ export async function POST(
 
     return createFailureResponse({
       status: 500,
-      message: "上传 token 接口执行失败。",
-      details: getErrorDetails(error),
+      message: (await translateApiText("上传 token 接口执行失败。", request))!,
+      details: await translateApiText(getErrorDetails(error), request),
       errorCode: ErrorCodes.UPLOAD_TOKEN_CREATE_FAILED,
       createdAt: new Date().toISOString(),
     });

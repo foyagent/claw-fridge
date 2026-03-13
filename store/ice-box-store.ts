@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useAppStore } from "@/store/app-store";
 import { createDisabledEncryptionConfig } from "@/lib/backup-encryption";
-import { readApiPayload, toOperationNotice, toRequestFailureNotice } from "@/lib/api-client";
+import { getApiRequestHeaders, readApiPayload, toOperationNotice, toRequestFailureNotice } from "@/lib/api-client";
 import {
   addIceBox,
   deleteIceBox as deleteIceBoxFromGitClient,
@@ -255,9 +255,9 @@ async function syncIceBoxWithRemote(
       async () => {
         const response = await fetch(`/api/ice-boxes/${item.id}/sync`, {
           method: "POST",
-          headers: {
+          headers: getApiRequestHeaders({
             "Content-Type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             gitConfig: normalizedGitConfig,
             item,
@@ -336,9 +336,9 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
             async () => {
               const response = await fetch("/api/ice-boxes/list", {
                 method: "POST",
-                headers: {
+                headers: getApiRequestHeaders({
                   "Content-Type": "application/json",
-                },
+                }),
                 body: JSON.stringify({
                   gitConfig: normalizedGitConfig,
                 }),
@@ -432,9 +432,9 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
             try {
               const response = await fetch(`/api/ice-boxes/${iceBoxId}/upload-token`, {
                 method: "POST",
-                headers: {
+                headers: getApiRequestHeaders({
                   "Content-Type": "application/json",
-                },
+                }),
                 body: JSON.stringify({
                   iceBoxName: name,
                   machineId,
@@ -677,9 +677,9 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               async () => {
                 const response = await fetch(`/api/ice-boxes/${id}`, {
                   method: "PUT",
-                  headers: {
+                  headers: getApiRequestHeaders({
                     "Content-Type": "application/json",
-                  },
+                  }),
                   body: JSON.stringify({
                     gitConfig: normalizedGitConfig,
                     updates: {
@@ -752,9 +752,9 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               async () => {
                 const response = await fetch(`/api/ice-boxes/${id}`, {
                   method: "PUT",
-                  headers: {
+                  headers: getApiRequestHeaders({
                     "Content-Type": "application/json",
-                  },
+                  }),
                   body: JSON.stringify({
                     gitConfig: normalizedGitConfig,
                     updates: {
@@ -837,9 +837,9 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               async () => {
                 const response = await fetch(`/api/ice-boxes/${id}`, {
                   method: "DELETE",
-                  headers: {
+                  headers: getApiRequestHeaders({
                     "Content-Type": "application/json",
-                  },
+                  }),
                   body: JSON.stringify({
                     gitConfig: normalizedGitConfig,
                   }),

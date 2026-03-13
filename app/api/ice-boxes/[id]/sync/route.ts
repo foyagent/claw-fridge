@@ -8,6 +8,7 @@ import {
 } from "@/lib/api-response";
 import { createIceBoxInGit, updateIceBoxInGit } from "@/lib/ice-box-sync.server";
 import { logServerError } from "@/lib/server-logger";
+import { localizeOperationResult, translateApiText } from "@/lib/server-translations";
 import type { GitRepositoryConfig, IceBoxListItem } from "@/types";
 
 export const runtime = "nodejs";
@@ -28,8 +29,8 @@ export async function POST(
     if (!body?.gitConfig?.repository) {
       return createFailureResponse({
         status: 400,
-        message: "请提供 Git 配置。",
-        details: "请求体必须包含有效的 Git 配置对象。",
+        message: (await translateApiText("请提供 Git 配置。", request))!,
+        details: await translateApiText("请求体必须包含有效的 Git 配置对象。", request),
         errorCode: ErrorCodes.INVALID_REQUEST,
         syncedAt: new Date().toISOString(),
       });
@@ -38,8 +39,8 @@ export async function POST(
     if (!body?.item?.id || body.item.id !== id) {
       return createFailureResponse({
         status: 400,
-        message: "请提供匹配的冰盒信息。",
-        details: "请求体必须包含 item，且 item.id 需要与路由参数一致。",
+        message: (await translateApiText("请提供匹配的冰盒信息。", request))!,
+        details: await translateApiText("请求体必须包含 item，且 item.id 需要与路由参数一致。", request),
         errorCode: ErrorCodes.INVALID_REQUEST,
         syncedAt: new Date().toISOString(),
       });
@@ -60,7 +61,7 @@ export async function POST(
       });
     }
 
-    return NextResponse.json(normalizeOperationResult(result), {
+    return NextResponse.json(await localizeOperationResult(normalizeOperationResult(result), request), {
       status: resolveResultStatus(result),
     });
   } catch (error) {
@@ -68,8 +69,8 @@ export async function POST(
 
     return createFailureResponse({
       status: 500,
-      message: "补偿同步接口执行失败。",
-      details: getErrorDetails(error),
+      message: (await translateApiText("补偿同步接口执行失败。", request))!,
+      details: await translateApiText(getErrorDetails(error), request),
       errorCode: ErrorCodes.ICEBOX_CREATE_FAILED,
       syncedAt: new Date().toISOString(),
     });

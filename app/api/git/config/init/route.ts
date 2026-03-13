@@ -3,6 +3,7 @@ import { createFailureResponse, normalizeOperationResult, getErrorDetails, resol
 import { normalizeGitConfig } from "@/lib/git-config";
 import { initializeFridgeConfigBranch } from "@/lib/git-config.server";
 import { logServerError } from "@/lib/server-logger";
+import { localizeOperationResult, translateApiText } from "@/lib/server-translations";
 import type { GitRepositoryConfig } from "@/types";
 
 export async function POST(request: Request) {
@@ -12,8 +13,8 @@ export async function POST(request: Request) {
     if (!body || typeof body !== "object") {
       return createFailureResponse({
         status: 400,
-        message: "无效的 Git 配置请求。",
-        details: "请求体必须是合法的 Git 配置对象。",
+        message: (await translateApiText("无效的 Git 配置请求。", request))!,
+        details: await translateApiText("请求体必须是合法的 Git 配置对象。", request),
         errorCode: ErrorCodes.GIT_CONFIG_INVALID,
       });
     }
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
     });
     const result = await initializeFridgeConfigBranch(config);
 
-    return NextResponse.json(normalizeOperationResult(result), {
+    return NextResponse.json(await localizeOperationResult(normalizeOperationResult(result), request), {
       status: resolveResultStatus(result),
     });
   } catch (error) {
@@ -34,8 +35,8 @@ export async function POST(request: Request) {
 
     return createFailureResponse({
       status: 500,
-      message: "Git 配置初始化接口执行失败。",
-      details: getErrorDetails(error),
+      message: (await translateApiText("Git 配置初始化接口执行失败。", request))!,
+      details: await translateApiText(getErrorDetails(error), request),
       errorCode: ErrorCodes.GIT_CONFIG_INIT_FAILED,
       initializedAt: new Date().toISOString(),
     });
