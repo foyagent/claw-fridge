@@ -8,9 +8,7 @@ import { readApiPayload, toOperationNotice, toRequestFailureNotice } from "@/lib
 import {
   addIceBox,
   deleteIceBox as deleteIceBoxFromGitClient,
-  getIceBoxHistory,
   listIceBoxes,
-  shouldFallbackToServer,
   syncIceBoxBranch,
   updateIceBox,
 } from "@/lib/git-client";
@@ -25,7 +23,6 @@ import type {
   CreateIceBoxResult,
   CreateUploadTokenResult,
   GitRepositoryConfig,
-  IceBoxHistoryResult,
   IceBoxListItem,
   IceBoxRecord,
   IceBoxStoreState,
@@ -206,50 +203,16 @@ function applyIceBoxBackupState(item: IceBoxListItem, lastBackupAt: string | nul
   });
 }
 
-async function readIceBoxLatestBackupAt(item: IceBoxListItem, gitConfig: GitRepositoryConfig): Promise<string | null> {
-  try {
-    const entries = await getIceBoxHistory(gitConfig, item.id);
-    return entries[0]?.committedAt ?? null;
-  } catch (error) {
-    if (!shouldFallbackToServer(error)) {
-      return item.lastBackupAt;
-    }
-
-    try {
-      const response = await fetch(`/api/ice-boxes/${item.id}/history`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          machineId: item.machineId,
-          branch: item.branch,
-          gitConfig,
-          limit: 1,
-        }),
-      });
-      const payload = await readApiPayload<IceBoxHistoryResult>(response);
-
-      if (!response.ok || !payload.ok) {
-        return item.lastBackupAt;
-      }
-
-      return payload.entries?.[0]?.committedAt ?? null;
-    } catch {
-      return item.lastBackupAt;
-    }
+function mergeIceBoxWithCachedBackupState(item: IceBoxListItem, cachedItem?: IceBoxListItem): IceBoxListItem {
+  if (!cachedItem) {
+    return normalizeIceBoxItem(item);
   }
-}
 
-async function hydrateIceBoxesBackupState(
-  items: IceBoxListItem[],
-  gitConfig: GitRepositoryConfig,
-): Promise<IceBoxListItem[]> {
-  const hydratedItems = await Promise.all(
-    items.map(async (item) => applyIceBoxBackupState(item, await readIceBoxLatestBackupAt(item, gitConfig))),
-  );
-
-  return hydratedItems;
+  return normalizeIceBoxItem({
+    ...item,
+    lastBackupAt: cachedItem.lastBackupAt,
+    status: cachedItem.lastBackupAt ? "healthy" : item.status,
+  });
 }
 
 async function syncIceBoxWithRemote(
@@ -390,8 +353,12 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
             },
           );
 
-          const hydratedRemoteIceBoxes = await hydrateIceBoxesBackupState(remoteIceBoxes, normalizedGitConfig);
-          const mergedIceBoxes = new Map(hydratedRemoteIceBoxes.map((item) => [item.id, item]));
+          const mergedIceBoxes = new Map(
+            remoteIceBoxes.map((item) => {
+              const cachedItem = get().iceBoxes.find((localItem) => localItem.id === item.id);
+              return [item.id, mergeIceBoxWithCachedBackupState(item, cachedItem)] as const;
+            }),
+          );
 
           for (const localItem of get().iceBoxes) {
             if (localItem.syncStatus !== "synced" && !mergedIceBoxes.has(localItem.id)) {
