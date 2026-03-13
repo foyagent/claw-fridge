@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { useTranslations } from "next-intl";
 import { useMounted } from "@/hooks/use-mounted";
 import {
   createDisabledEncryptionConfig,
@@ -40,7 +41,6 @@ function createSuffix(): string {
 
 function buildSuggestedMachineId(name: string, suffix: string): string {
   const base = slugifySegment(name) || "machine";
-
   return `${base}-${suffix}`;
 }
 
@@ -56,10 +56,10 @@ function createEncryptionSalt(): string {
   return globalThis.btoa(binary);
 }
 
-function ResultDetails({ details }: { details: string }) {
+function ResultDetails({ details, label }: { details: string; label: string }) {
   return (
     <details className="mt-3 rounded-xl bg-black/5 p-3 text-xs leading-5 text-current dark:bg-black/20">
-      <summary className="cursor-pointer font-medium">查看细节</summary>
+      <summary className="cursor-pointer font-medium">{label}</summary>
       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{details}</pre>
     </details>
   );
@@ -71,6 +71,7 @@ interface IceBoxCreateFormProps {
 }
 
 export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps) {
+  const t = useTranslations();
   const mounted = useMounted();
   const hasHydrated = mounted;
   const gitConfig = useAppStore((state) => state.gitConfig);
@@ -96,62 +97,35 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
     if (!supportsEncryptedUpload || !encryptionEnabled) {
       return null;
     }
-
     if (masterKey.trim().length < 12) {
-      return "主密钥至少 12 个字符，建议使用长口令。";
+      return t("home.create.errors.minKeyLength");
     }
-
     if (masterKey !== masterKeyConfirm) {
-      return "两次输入的主密钥不一致。";
+      return t("home.create.errors.keyMismatch");
     }
-
     return null;
-  }, [encryptionEnabled, masterKey, masterKeyConfirm, supportsEncryptedUpload]);
-  const canSubmit =
-    hasHydrated &&
-    hasGitConfig &&
-    Boolean(name.trim()) &&
-    Boolean(normalizedMachineId) &&
-    !isCreating &&
-    !encryptionError;
+  }, [encryptionEnabled, masterKey, masterKeyConfirm, supportsEncryptedUpload, t]);
+
+  const canSubmit = hasHydrated && hasGitConfig && Boolean(name.trim()) && Boolean(normalizedMachineId) && !isCreating && !encryptionError;
+
   const submitHint = useMemo(() => {
     if (!hasHydrated) {
-      return {
-        tone: "info",
-        message: "正在读取本地配置，请稍等片刻。",
-      };
+      return { tone: "info", message: t("home.create.errors.loadingConfig") };
     }
-
     if (!hasGitConfig) {
-      return {
-        tone: "warning",
-        message: "请先配置 Git 仓库，再创建冰盒。",
-      };
+      return { tone: "warning", message: t("home.create.errors.needGitConfig") };
     }
-
     if (!name.trim()) {
-      return {
-        tone: "info",
-        message: "先填写冰盒名称，系统会顺手帮你生成 machine-id。",
-      };
+      return { tone: "info", message: t("home.create.errors.fillName") };
     }
-
     if (!normalizedMachineId) {
-      return {
-        tone: "warning",
-        message: "machine-id 需要至少保留一个字母、数字或短横线。",
-      };
+      return { tone: "warning", message: t("home.create.errors.invalidMachineId") };
     }
-
     if (encryptionError) {
-      return {
-        tone: "warning",
-        message: encryptionError,
-      };
+      return { tone: "warning", message: encryptionError };
     }
-
     return null;
-  }, [encryptionError, hasGitConfig, hasHydrated, name, normalizedMachineId]);
+  }, [encryptionError, hasGitConfig, hasHydrated, name, normalizedMachineId, t]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -163,39 +137,28 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
     }
 
     const createdAt = new Date().toISOString();
-    const encryption =
-      supportsEncryptedUpload && encryptionEnabled
-        ? {
-            version: 1 as const,
-            enabled: true,
-            scope: uploadPayloadEncryptionScope,
-            algorithm: uploadPayloadEncryptionAlgorithm,
-            kdf: uploadPayloadEncryptionKdf,
-            kdfSalt: createEncryptionSalt(),
-            kdfIterations: defaultUploadPayloadKdfIterations,
-            keyStrategy: uploadPayloadEncryptionKeyStrategy,
-            keyHint: normalizeEncryptionKeyHint(masterKeyHint),
-            updatedAt: createdAt,
-          }
-        : createDisabledEncryptionConfig(createdAt);
+    const encryption = supportsEncryptedUpload && encryptionEnabled
+      ? {
+          version: 1 as const,
+          enabled: true,
+          scope: uploadPayloadEncryptionScope,
+          algorithm: uploadPayloadEncryptionAlgorithm,
+          kdf: uploadPayloadEncryptionKdf,
+          kdfSalt: createEncryptionSalt(),
+          kdfIterations: defaultUploadPayloadKdfIterations,
+          keyStrategy: uploadPayloadEncryptionKeyStrategy,
+          keyHint: normalizeEncryptionKeyHint(masterKeyHint),
+          updatedAt: createdAt,
+        }
+      : createDisabledEncryptionConfig(createdAt);
 
-    const result = await createIceBox({
-      name,
-      machineId: normalizedMachineId,
-      backupMode,
-      gitConfig,
-      encryption,
-    });
+    const result = await createIceBox({ name, machineId: normalizedMachineId, backupMode, gitConfig, encryption });
 
     if (!result.ok || !result.item) {
-      setError({
-        message: result.message,
-        details: result.details,
-      });
+      setError({ message: result.message, details: result.details });
       return;
     }
 
-    // 重置表单
     setName("");
     setMachineId(buildSuggestedMachineId("", createSuffix()));
     setBackupMode("git-branch");
@@ -205,7 +168,6 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
     setMasterKeyHint("");
     setMachineIdTouched(false);
     setError(null);
-
     onSuccess?.();
   }
 
@@ -213,42 +175,31 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
     <div className="grid gap-5 rounded-[24px] border border-sky-400/30 bg-sky-500/5 p-5 shadow-sm shadow-sky-500/10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
-          <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">新建冰盒</h3>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">创建冰盒后会生成对应的备份分支和 Skill 文档。</p>
+          <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("home.create.title")}</h3>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">{t("home.create.description")}</p>
         </div>
-        {onCancel ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="fridge-button-ghost"
-          >
-            取消
-          </button>
-        ) : null}
+        {onCancel ? <button type="button" onClick={onCancel} className="fridge-button-ghost">{t("common.cancel")}</button> : null}
       </div>
 
       <form onSubmit={(event) => void handleSubmit(event)} className="grid gap-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-2">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">冰盒名称</span>
+            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("home.create.name")}</span>
             <input
               value={name}
               disabled={!hasHydrated || isCreating}
               onChange={(event) => {
                 const nextName = event.target.value;
                 setName(nextName);
-
-                if (!machineIdTouched) {
-                  setMachineId(buildSuggestedMachineId(nextName, machineSuffix));
-                }
+                if (!machineIdTouched) setMachineId(buildSuggestedMachineId(nextName, machineSuffix));
               }}
-              placeholder="例如：Boen 的 MacBook Pro"
+              placeholder={t("home.create.namePlaceholder")}
               className="fridge-input"
             />
           </label>
 
           <label className="grid gap-2">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">machine-id</span>
+            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("home.create.machineId")}</span>
             <input
               value={machineId}
               disabled={!hasHydrated || isCreating}
@@ -259,14 +210,12 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
               placeholder="machine-id"
               className="fridge-input"
             />
-            <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-              预览：`{normalizedMachineId || "machine-id"}`
-            </p>
+            <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t("home.create.machinePreview", { value: normalizedMachineId || "machine-id" })}</p>
           </label>
         </div>
 
         <div className="space-y-3">
-          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">备份方案</span>
+          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("home.create.backupMode")}</span>
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
@@ -283,12 +232,10 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
               ].join(" ")}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold text-zinc-950 dark:text-zinc-50">Git 直推</p>
-                {backupMode === "git-branch" ? <span className="fridge-chip fridge-chip--ocean">推荐</span> : null}
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">{t("home.create.gitDirect")}</p>
+                {backupMode === "git-branch" ? <span className="fridge-chip fridge-chip--ocean">{t("home.create.gitDirectTag")}</span> : null}
               </div>
-              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                OpenClaw 直接推送，适合高频自动同步。
-              </p>
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{t("home.create.gitDirectDescription")}</p>
             </button>
 
             <button
@@ -303,12 +250,10 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
               ].join(" ")}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold text-zinc-950 dark:text-zinc-50">压缩包上传</p>
-                {backupMode === "upload-token" ? <span className="fridge-chip fridge-chip--coral">低频友好</span> : null}
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">{t("home.create.uploadToken")}</p>
+                {backupMode === "upload-token" ? <span className="fridge-chip fridge-chip--coral">{t("home.create.uploadTokenTag")}</span> : null}
               </div>
-              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                无需配置 Git，按需打包上传。
-              </p>
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{t("home.create.uploadTokenDescription")}</p>
             </button>
           </div>
         </div>
@@ -317,10 +262,8 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
           <div className="grid gap-4 rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 dark:border-white/10 dark:bg-zinc-950/30">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">上传链路加密</h4>
-                <p className="text-xs leading-5 text-zinc-600 dark:text-zinc-300">
-                  压缩包本地 AES-256-GCM 加密后上传。
-                </p>
+                <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("home.create.uploadEncryption")}</h4>
+                <p className="text-xs leading-5 text-zinc-600 dark:text-zinc-300">{t("home.create.uploadEncryptionDescription")}</p>
               </div>
               <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
                 <input
@@ -330,7 +273,7 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
                   onChange={(event) => setEncryptionEnabled(event.target.checked)}
                   className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500"
                 />
-                启用
+                {t("home.create.enableEncryption")}
               </label>
             </div>
 
@@ -338,37 +281,17 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
               <div className="grid gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="grid gap-2">
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">主密钥</span>
-                    <input
-                      type="password"
-                      value={masterKey}
-                      disabled={!hasHydrated || isCreating}
-                      onChange={(event) => setMasterKey(event.target.value)}
-                      placeholder="至少 12 个字符"
-                      className="fridge-input text-sm"
-                    />
+                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{t("home.create.masterKey")}</span>
+                    <input type="password" value={masterKey} disabled={!hasHydrated || isCreating} onChange={(event) => setMasterKey(event.target.value)} placeholder={t("home.create.masterKeyPlaceholder")} className="fridge-input text-sm" />
                   </label>
                   <label className="grid gap-2">
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">确认主密钥</span>
-                    <input
-                      type="password"
-                      value={masterKeyConfirm}
-                      disabled={!hasHydrated || isCreating}
-                      onChange={(event) => setMasterKeyConfirm(event.target.value)}
-                      placeholder="再输入一次"
-                      className="fridge-input text-sm"
-                    />
+                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{t("home.create.confirmMasterKey")}</span>
+                    <input type="password" value={masterKeyConfirm} disabled={!hasHydrated || isCreating} onChange={(event) => setMasterKeyConfirm(event.target.value)} placeholder={t("home.create.confirmMasterKey")} className="fridge-input text-sm" />
                   </label>
                 </div>
                 <label className="grid gap-2">
-                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">密钥提示（可选）</span>
-                  <input
-                    value={masterKeyHint}
-                    disabled={!hasHydrated || isCreating}
-                    onChange={(event) => setMasterKeyHint(event.target.value)}
-                    placeholder="例如：旧 MacBook 那把长口令"
-                    className="fridge-input text-sm"
-                  />
+                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{t("home.create.hint")}</span>
+                  <input value={masterKeyHint} disabled={!hasHydrated || isCreating} onChange={(event) => setMasterKeyHint(event.target.value)} placeholder={t("home.create.hintPlaceholder")} className="fridge-input text-sm" />
                 </label>
               </div>
             ) : null}
@@ -377,43 +300,37 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
 
         {encryptionError && supportsEncryptedUpload && encryptionEnabled ? (
           <div className="fridge-state fridge-state--warning">
-            <p className="font-medium">加密配置还没填好</p>
+            <p className="font-medium">{t("home.create.uploadEncryption")}</p>
             <p className="mt-1 opacity-90">{encryptionError}</p>
           </div>
         ) : null}
 
         {submitHint ? (
           <div className={`fridge-state ${submitHint.tone === "warning" ? "fridge-state--warning" : "fridge-state--info"}`}>
-            <p className="font-medium">当前提示</p>
+            <p className="font-medium">{t("home.create.saveNoteTitle")}</p>
             <p className="mt-1 opacity-90">{submitHint.message}</p>
           </div>
         ) : null}
 
         {error ? (
           <div className="fridge-state fridge-state--error">
-            <p className="font-medium">创建失败</p>
+            <p className="font-medium">{t("home.create.submit")}</p>
             <p className="mt-1 opacity-90">{error.message}</p>
-            {error.details ? <ResultDetails details={error.details} /> : null}
+            {error.details ? <ResultDetails details={error.details} label={t("common.viewDetails")} /> : null}
           </div>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button type="submit" disabled={!canSubmit} className="fridge-button-primary">
-            {isCreating ? "正在创建..." : "创建冰盒"}
-          </button>
-          {onCancel ? (
-            <button type="button" onClick={onCancel} className="fridge-button-secondary">
-              取消
-            </button>
-          ) : null}
+          <button type="submit" disabled={!canSubmit} className="fridge-button-primary">{isCreating ? t("home.create.submitting") : t("home.create.submit")}</button>
+          {onCancel ? <button type="button" onClick={onCancel} className="fridge-button-secondary">{t("common.cancel")}</button> : null}
         </div>
 
         <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 text-xs leading-5 text-zinc-600 dark:border-white/10 dark:bg-zinc-950/30 dark:text-zinc-300">
-          <p className="font-medium text-zinc-900 dark:text-zinc-100">创建预览</p>
+          <p className="font-medium text-zinc-900 dark:text-zinc-100">{t("home.create.saveNoteTitle")}</p>
           <div className="mt-2 grid gap-1">
-            <p>目标分支：<span className="font-mono">{previewBranch}</span></p>
-            <p>备份方案：<span>{backupMode === "git-branch" ? "Git 直推" : "压缩包上传"}</span></p>
-            <p>上传加密：<span>{supportsEncryptedUpload && encryptionEnabled ? "已启用 AES-256-GCM" : "未启用"}</span></p>
+            <p>{t("home.create.saveNote", { branch: previewBranch })}</p>
+            <p>{t("home.create.backupMode")}: <span>{backupMode === "git-branch" ? t("home.create.gitDirect") : t("home.create.uploadToken")}</span></p>
+            <p>{t("detail.uploadEncryption")}: <span>{supportsEncryptedUpload && encryptionEnabled ? t("home.create.cryptoLabel") : t("common.disabled")}</span></p>
           </div>
         </div>
       </form>

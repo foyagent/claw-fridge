@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readApiPayload, toOperationNotice, toRequestFailureNotice, type OperationNotice } from "@/lib/api-client";
@@ -194,6 +195,7 @@ function writeHistoryCache(iceBoxId: string, record: IceBoxHistoryCacheRecord) {
 }
 
 export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: boolean }) {
+  const t = useTranslations();
   const mounted = useMounted();
   const router = useRouter();
   const gitConfig = useAppStore((state) => state.gitConfig);
@@ -354,7 +356,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
     !isRestoring;
   const restoreHint = useMemo(() => {
     if (!hasConfiguredRepository) {
-      return "先回首页保存并测试 Git 仓库连接，恢复接口才能知道该去哪里拉取备份。";
+      return t("detail.restoreNeedGit");
     }
 
     if (!restoreTargetRootDir.trim()) {
@@ -693,8 +695,8 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           ✅
         </div>
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">冰盒已删除</h1>
-          <p className="text-sm leading-6 opacity-90 sm:text-base">正在带你回到冰盒列表，冷冻室已经收拾干净了。</p>
+          <h1 className="text-2xl font-semibold">{t("detail.deletedTitle")}</h1>
+          <p className="text-sm leading-6 opacity-90 sm:text-base">{t("detail.deletedDescription")}</p>
         </div>
       </section>
     );
@@ -709,7 +711,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             href="/"
             className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:text-zinc-200 dark:hover:border-sky-500 dark:hover:text-sky-300"
           >
-            返回冰盒列表
+            {t("common.backToList")}
           </Link>
         </div>
       </section>
@@ -723,9 +725,9 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
           🧭
         </div>
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">没有找到这个冰盒</h1>
+          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.notFoundTitle")}</h1>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400 sm:text-base">
-            可能是当前设备还没同步到本地存储，也可能这个冰盒尚未创建。
+            {t("detail.notFoundDescription")}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3">
@@ -850,7 +852,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         <div className="fridge-panel-tint flex flex-wrap items-center gap-3 text-sm leading-6 text-zinc-700 dark:text-zinc-200">
           {iceBox.syncStatus !== "synced" ? (
             <button type="button" onClick={() => void handleSyncToRemote()} className="fridge-button-secondary" disabled={isSyncingToRemote}>
-              {isSyncingToRemote ? "正在同步到远端..." : "立即同步到远端"}
+              {isSyncingToRemote ? t("detail.syncing") : t("detail.syncNow")}
             </button>
           ) : null}
         </div>
@@ -862,7 +864,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
         <div className="fridge-state fridge-state--warning grid gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-medium">这台冰盒目前只保证本地存在，尚未确认写入远端。</p>
+              <p className="font-medium">{t("detail.localOnlyTitle")}</p>
               <p className="mt-1 opacity-90">{syncMeta.description}</p>
             </div>
             <button type="button" onClick={() => void handleSyncToRemote()} className="fridge-button-secondary" disabled={isSyncingToRemote}>
@@ -882,40 +884,40 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">基本信息</h2>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.basicInfo")}</h2>
           <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2">
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">冰盒名称</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.iceBoxName")}</dt>
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{iceBox.name}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">机器 ID</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.machineId")}</dt>
               <dd className="mt-2 font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.machineId}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">分支名称</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.branchName")}</dt>
               <dd className="mt-2 font-mono text-xs text-zinc-800 dark:text-zinc-200">{iceBox.branch}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份方案</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.backupMode")}</dt>
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{backupModeMeta.label}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5 sm:col-span-2">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Git 仓库</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.repository")}</dt>
               <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.repository}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.backupBranch")}</dt>
               <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.branch}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">ice-box-id</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.iceBoxId")}</dt>
               <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.skillConfig.iceBoxId}</dd>
             </div>
             {iceBox.backupMode === "upload-token" ? (
               <>
                 <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5 sm:col-span-2">
-                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传地址</dt>
+                  <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.uploadUrl")}</dt>
                   <dd className="mt-2 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">{uploadUrl ?? "未生成"}</dd>
                 </div>
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
@@ -942,7 +944,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               </>
             ) : (
               <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">上传加密</dt>
+                <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.uploadEncryption")}</dt>
                 <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">未启用</dd>
               </div>
             )}
@@ -955,18 +957,18 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.lastSyncAt)}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">创建时间</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.createdAt")}</dt>
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.createdAt)}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-3 dark:bg-white/5">
-              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">最后更新</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("detail.updatedAt")}</dt>
               <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(iceBox.updatedAt)}</dd>
             </div>
           </dl>
         </div>
 
         <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">备份状态</h2>
+          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.status")}</h2>
           <div className="rounded-[24px] bg-white p-5 dark:bg-white/5">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">最后备份时间</p>
             <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
@@ -1306,7 +1308,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
             />
             {copiedField ? (
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
-                已复制到剪贴板。
+                {t("common.copied")}
               </div>
             ) : null}
           </div>
@@ -1316,7 +1318,7 @@ export function IceBoxDetail({ id, embedded = false }: { id: string; embedded?: 
       <div className="grid gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/70 p-5 dark:border-white/10 dark:bg-zinc-950/40">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
-            <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">备份历史</h2>
+            <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{t("detail.history")}</h2>
           </div>
           <button
             type="button"

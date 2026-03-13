@@ -1,3 +1,5 @@
+@custom-variant dark (&:where(.dark, .dark *));
+
 @import "tailwindcss";
 
 :root {
@@ -35,8 +37,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+.dark {
     --background: #06131d;
     --foreground: #ebf7ff;
     --panel: rgba(10, 27, 39, 0.84);
@@ -63,10 +64,13 @@
     --surface-strong: rgba(18, 43, 60, 0.98);
     --placeholder: #8fb1c4;
   }
-}
 
 html {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { IceBoxDetail } from "@/components/ice-boxes/ice-box-detail";
 import { IceBoxCreateForm } from "@/components/home/ice-box-create-form";
 import { useMounted } from "@/hooks/use-mounted";
@@ -57,6 +58,7 @@ function IceBoxListSkeleton() {
 }
 
 export function IceBoxList() {
+  const t = useTranslations();
   const mounted = useMounted();
   const gitConfig = useAppStore((state) => state.gitConfig);
   const gitConfigRepository = gitConfig.repository;
@@ -106,13 +108,13 @@ export function IceBoxList() {
   return (
     <section className="fridge-panel grid gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">冰盒</h2>
+        <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50 sm:text-3xl">{t("home.title")}</h2>
         <button
           type="button"
           onClick={() => setIsCreating((current) => !current)}
           className="fridge-button-primary"
         >
-          {isCreating ? "收起创建表单" : "新建冰盒"}
+          {isCreating ? t("home.collapseCreateForm") : t("home.newIceBox")}
         </button>
       </div>
 
@@ -141,7 +143,7 @@ export function IceBoxList() {
       {error ? (
         <div className="fridge-state fridge-state--error flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-medium">冰盒列表加载失败</p>
+            <p className="font-medium">{t("home.loadFailed")}</p>
             <p className="mt-1 opacity-90">{error}</p>
           </div>
           <button
@@ -152,7 +154,7 @@ export function IceBoxList() {
             }}
             className="fridge-button-secondary"
           >
-            重试加载
+            {t("common.retry")}
           </button>
         </div>
       ) : null}
@@ -160,15 +162,15 @@ export function IceBoxList() {
       {iceBoxes.length === 0 && !isCreating ? (
         <div className="grid gap-4 rounded-[24px] border border-dashed border-zinc-300 bg-white/55 p-8 dark:border-white/10 dark:bg-white/5">
           <div className="space-y-2">
-            <p className="text-lg font-medium text-zinc-900 dark:text-zinc-100">还没有冰盒</p>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">点击上方"新建冰盒"创建第一个备份配置。</p>
+            <p className="text-lg font-medium text-zinc-900 dark:text-zinc-100">{t("home.emptyTitle")}</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">{t("home.emptyDescription")}</p>
           </div>
           <button
             type="button"
             onClick={() => setIsCreating(true)}
             className="fridge-button-primary w-fit"
           >
-            新建冰盒
+            {t("home.newIceBox")}
           </button>
         </div>
       ) : (
@@ -194,25 +196,25 @@ export function IceBoxList() {
                       </div>
                     </div>
                     <span className="text-sm font-medium text-zinc-500 transition group-hover:text-sky-700 dark:text-zinc-400 dark:group-hover:text-sky-300">
-                      {isExpanded ? "收起" : "展开"}
+                      {isExpanded ? t("common.collapse") : t("common.expand")}
                     </span>
                   </div>
 
                   <dl className="grid gap-3 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">最后备份</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("home.lastBackup")}</dt>
                       <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{formatLastBackupTime(iceBox.lastBackupAt)}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">远端同步</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("home.remoteSync")}</dt>
                       <dd className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">{syncMeta.label}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">机器 ID</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("home.machineId")}</dt>
                       <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.machineId}</dd>
                     </div>
                     <div className="rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950/50">
-                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">备份分支</dt>
+                      <dt className="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{t("home.backupBranch")}</dt>
                       <dd className="mt-2 font-mono text-xs text-zinc-900 dark:text-zinc-100">{iceBox.branch}</dd>
                     </div>
                   </dl>
