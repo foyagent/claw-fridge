@@ -222,6 +222,7 @@ export interface CreateIceBoxInput {
   backupMode: IceBoxBackupMode;
   gitConfig: GitRepositoryConfig;
   encryption: IceBoxEncryptionConfig;
+  filter?: IceBoxFilterConfig;
 }
 
 export interface CreateIceBoxResult extends OperationResultFields {
@@ -465,4 +466,30 @@ export interface IceBoxStoreState {
   syncIceBoxBackupState: (id: string, lastBackupAt: string | null) => void;
   deleteIceBox: (id: string, gitConfig: GitRepositoryConfig) => Promise<void>;
   clearError: () => void;
+}
+
+// ========== 备份过滤规则 ==========
+
+export type ExcludeMode = 'disabled' | 'blacklist' | 'whitelist';
+
+export type PatternType = 'glob' | 'regex';
+
+export interface FilterPattern {
+  pattern: string;
+  type: PatternType;
+  description?: string;
+}
+
+export interface ExcludePreset {
+  id: string;
+  name: string;
+  description?: string;
+  patterns: FilterPattern[];
+}
+
+export interface IceBoxFilterConfig {
+  mode: ExcludeMode;
+  patterns: FilterPattern[];
+  presets: string[];
+  inheritGitignore: boolean;
 }
