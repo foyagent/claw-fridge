@@ -217,8 +217,8 @@ clone_repository() {
 
   cd "$TEMP_DIR/repo"
 
-  # Fetch the specific branch
-  if ! env "${git_env[@]}" git fetch origin "$BRANCH" 2>&1; then
+  # Fetch the specific branch with depth
+  if ! env "${git_env[@]}" git fetch --depth 50 origin "$BRANCH" 2>&1; then
     log_error "Branch not found: $BRANCH"
     log_info "Available branches:"
     git branch -r | grep "$DEFAULT_BRANCH_PREFIX" || true
@@ -234,7 +234,7 @@ clone_repository() {
     fi
   else
     log_info "Checking out branch: $BRANCH"
-    if ! git checkout -b restore "origin/$BRANCH" 2>&1; then
+    if ! git checkout FETCH_HEAD 2>&1; then
       log_error "Failed to checkout branch: $BRANCH"
       exit 1
     fi
