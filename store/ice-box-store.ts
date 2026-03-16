@@ -565,6 +565,7 @@ export const useIceBoxStore = create<IceBoxStoreState>()(
               uploadToken,
               scheduledBackup: createDefaultScheduledBackupConfig(),
               encryption: input.encryption,
+              filter: input.filter,
               createdAt,
             },
           });
