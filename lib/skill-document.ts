@@ -435,27 +435,19 @@ function buildGitSyncScript(config: IceBoxSkillConfig): string {
   ];
 
   if (filterConfig?.mode === "blacklist") {
-    lines.push(
-      'TEMP_EXCLUDE_FILE="$(mktemp)"',
-      'cleanup() {',
-      '  rm -f "$TEMP_EXCLUDE_FILE"',
-      '}',
-      'trap cleanup EXIT',
-      `cat <<'EOF' > "$TEMP_EXCLUDE_FILE"`,
-      gitExcludeContent.trimEnd(),
-      'EOF',
-      '',
-    );
+    if (resolvedPatterns.some((pattern) => pattern.type === "glob")) {
+      lines.push(
+        `cat <<'EOF' >> .git/info/exclude`,
+        gitExcludeContent.trimEnd(),
+        'EOF',
+        '',
+      );
+    }
+
+    lines.push('git add -A');
 
     if (hasRegexPatterns) {
       const regexPatterns = resolvedPatterns.filter((pattern) => pattern.type === "regex");
-      const hasGlobPatterns = resolvedPatterns.some((pattern) => pattern.type === "glob");
-
-      if (hasGlobPatterns) {
-        lines.push('git add -A -- ":(exclude-from)$TEMP_EXCLUDE_FILE"');
-      } else {
-        lines.push('git add -A');
-      }
 
       lines.push(
         'git diff --cached --name-only | while IFS= read -r path; do',
@@ -466,8 +458,6 @@ function buildGitSyncScript(config: IceBoxSkillConfig): string {
         '  fi',
         'done',
       );
-    } else {
-      lines.push('git add -A -- ":(exclude-from)$TEMP_EXCLUDE_FILE"');
     }
   } else if (filterConfig?.mode === "whitelist") {
     lines.push(

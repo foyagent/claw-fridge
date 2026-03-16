@@ -67,6 +67,16 @@ EOF
 }
 
 # Parse arguments
+require_option_value() {
+  local option_name="$1"
+
+  if [[ $# -lt 2 ]] || [[ -z "${2:-}" ]] || [[ "${2:-}" == -* ]]; then
+    log_error "Option ${option_name} requires a value."
+    show_usage
+    exit 1
+  fi
+}
+
 parse_args() {
   REPOSITORY=""
   MACHINE_ID=""
@@ -80,34 +90,42 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case $1 in
       -r|--repository)
+        require_option_value "$1" "$@"
         REPOSITORY="$2"
         shift 2
         ;;
       -m|--machine-id)
+        require_option_value "$1" "$@"
         MACHINE_ID="$2"
         shift 2
         ;;
       -t|--target-dir)
+        require_option_value "$1" "$@"
         TARGET_DIR="$2"
         shift 2
         ;;
       -b|--branch)
+        require_option_value "$1" "$@"
         BRANCH="$2"
         shift 2
         ;;
       -c|--commit)
+        require_option_value "$1" "$@"
         COMMIT="$2"
         shift 2
         ;;
       -k|--ssh-key)
+        require_option_value "$1" "$@"
         SSH_KEY="$2"
         shift 2
         ;;
       -u|--username)
+        require_option_value "$1" "$@"
         USERNAME="$2"
         shift 2
         ;;
       -p|--token)
+        require_option_value "$1" "$@"
         TOKEN="$2"
         shift 2
         ;;
@@ -170,22 +188,42 @@ setup_git_auth() {
       exit 1
     fi
 
+    if ! command -v ssh-agent >/dev/null 2>&1 || ! command -v ssh-add >/dev/null 2>&1; then
+      log_error "ssh-agent and ssh-add are required when using --ssh-key."
+      exit 1
+    fi
+
     # Start SSH agent and add key
     eval "$(ssh-agent -s)"
     ssh-add "$SSH_KEY"
+    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o IdentitiesOnly=yes"
+    export GIT_SSH_COMMAND
 
     log_success "SSH key added: $SSH_KEY"
   fi
 
   # Configure credential helper for HTTPS
-  if [[ -n "$USERNAME" ]] && [[ -n "$TOKEN" ]]; then
-    # Create credential helper
-    cat > /tmp/git-credential-helper.sh <<EOF
+  if [[ -n "$USERNAME" ]] || [[ -n "$TOKEN" ]]; then
+    if [[ -z "$USERNAME" ]] || [[ -z "$TOKEN" ]]; then
+      log_error "Both --username and --token are required for HTTPS authentication."
+      exit 1
+    fi
+
+    GIT_ASKPASS_HELPER=$(mktemp "${TMPDIR:-/tmp}/claw-fridge-askpass.XXXXXX")
+    export CLAW_FRIDGE_GIT_USERNAME="$USERNAME"
+    export CLAW_FRIDGE_GIT_TOKEN="$TOKEN"
+    cat > "$GIT_ASKPASS_HELPER" <<'EOF'
 #!/bin/bash
-echo "username=$USERNAME"
-echo "password=$TOKEN"
+case "${1:-}" in
+  *Username*|*username*)
+    printf '%s\n' "$CLAW_FRIDGE_GIT_USERNAME"
+    ;;
+  *)
+    printf '%s\n' "$CLAW_FRIDGE_GIT_TOKEN"
+    ;;
+esac
 EOF
-    chmod +x /tmp/git-credential-helper.sh
+    chmod 700 "$GIT_ASKPASS_HELPER"
 
     log_success "Git credentials configured for HTTPS."
   fi
@@ -206,23 +244,32 @@ clone_repository() {
 
   # Setup environment for credentials
   if [[ -n "$USERNAME" ]] && [[ -n "$TOKEN" ]]; then
-    git_env+=("GIT_ASKPASS=/tmp/git-credential-helper.sh")
+    git_env+=("GIT_ASKPASS=$GIT_ASKPASS_HELPER" "GIT_TERMINAL_PROMPT=0")
   fi
 
   # Clone with shallow depth for faster download
-  if ! env "${git_env[@]}" git clone --no-checkout --depth 50 "$clone_url" "$TEMP_DIR/repo" 2>&1; then
+  if ! env "${git_env[@]}" git clone --no-checkout --depth 50 "$clone_url" "$TEMP_DIR/repo"; then
     log_error "Failed to clone repository: $clone_url"
     exit 1
   fi
 
   cd "$TEMP_DIR/repo"
 
-  # Fetch the specific branch with depth
-  if ! env "${git_env[@]}" git fetch --depth 50 origin "$BRANCH" 2>&1; then
-    log_error "Branch not found: $BRANCH"
-    log_info "Available branches:"
-    git branch -r | grep "$DEFAULT_BRANCH_PREFIX" || true
-    exit 1
+  # Fetch the specific branch. Full history is required when restoring a specific commit.
+  if [[ -n "$COMMIT" ]]; then
+    if ! env "${git_env[@]}" git fetch origin "$BRANCH"; then
+      log_error "Branch not found: $BRANCH"
+      log_info "Available branches:"
+      git branch -r | grep "$DEFAULT_BRANCH_PREFIX" || true
+      exit 1
+    fi
+  else
+    if ! env "${git_env[@]}" git fetch --depth 50 origin "$BRANCH"; then
+      log_error "Branch not found: $BRANCH"
+      log_info "Available branches:"
+      git branch -r | grep "$DEFAULT_BRANCH_PREFIX" || true
+      exit 1
+    fi
   fi
 
   # Checkout branch or specific commit
@@ -259,24 +306,29 @@ verify_backup() {
 # Restore backup
 restore_backup() {
   local target_path="$TARGET_DIR/.openclaw"
+  local backup_path=""
 
   log_info "Restoring backup to: $target_path"
+
+  # Ensure target directory exists
+  mkdir -p "$TARGET_DIR"
 
   # Check if target already exists
   if [[ -d "$target_path" ]]; then
     log_warning "Target directory already exists: $target_path"
 
     # Create backup of existing directory
-    local backup_path="$TARGET_DIR/.openclaw.backup.$(date +%Y%m%d_%H%M%S)"
+    backup_path="$TARGET_DIR/.openclaw.backup.$(date +%Y%m%d_%H%M%S)"
     log_info "Creating backup of existing directory: $backup_path"
     mv "$target_path" "$backup_path"
   fi
 
-  # Ensure target directory exists
-  mkdir -p "$TARGET_DIR"
-
   # Copy .openclaw directory
   if ! cp -r .openclaw "$target_path"; then
+    rm -rf "$target_path" 2>/dev/null || true
+    if [[ -n "$backup_path" ]] && [[ -d "$backup_path" ]]; then
+      mv "$backup_path" "$target_path" 2>/dev/null || true
+    fi
     log_error "Failed to restore backup to: $target_path"
     exit 1
   fi
@@ -291,9 +343,11 @@ cleanup() {
     rm -rf "$TEMP_DIR"
   fi
 
-  if [[ -f "/tmp/git-credential-helper.sh" ]]; then
-    rm -f /tmp/git-credential-helper.sh
+  if [[ -n "${GIT_ASKPASS_HELPER:-}" ]] && [[ -f "$GIT_ASKPASS_HELPER" ]]; then
+    rm -f "$GIT_ASKPASS_HELPER"
   fi
+
+  unset CLAW_FRIDGE_GIT_USERNAME CLAW_FRIDGE_GIT_TOKEN GIT_SSH_COMMAND
 
   # Kill SSH agent if we started it
   if [[ -n "${SSH_AGENT_PID:-}" ]]; then
