@@ -71,6 +71,56 @@
         "fillName": "Start with the ice box name and we'll help generate the machine-id.",
         "invalidMachineId": "machine-id must keep at least one letter, number, or hyphen."
       }
+    },
+    "filter": {
+      "title": "Backup filter rules",
+      "description": "{count} active rules right now.",
+      "modeLabel": "Filter mode",
+      "presetsLabel": "Quick presets",
+      "selectedPresets": "{count} presets selected",
+      "inheritGitignore": "Inherit existing .gitignore rules (recommended)",
+      "customRuleLabel": "Custom rules",
+      "customRulePlaceholder": "For example: node_modules/** or ^(?!skills(?:/|$)).+",
+      "addRule": "+ Add",
+      "invalidRegex": "Invalid regular expression. Please check the syntax.",
+      "ruleListLabel": "Added rules",
+      "totalRules": "{count} total",
+      "emptyRules": "No rules added yet.",
+      "remove": "Remove",
+      "whitelistNoticeTitle": "Whitelist mode needs extra care",
+      "whitelistNoticeDescription": "Only matched files will be kept. If your rules are too narrow, you may accidentally skip the files you actually want to back up.",
+      "modes": {
+        "disabled": {
+          "title": "Disabled",
+          "description": "Back up everything with no filtering.",
+          "short": "Disabled"
+        },
+        "blacklist": {
+          "title": "Blacklist",
+          "description": "Exclude matching files or directories.",
+          "short": "Blacklist"
+        },
+        "whitelist": {
+          "title": "Whitelist",
+          "description": "Keep only matching files or directories.",
+          "short": "Whitelist"
+        }
+      },
+      "patternTypes": {
+        "glob": "Glob",
+        "regex": "Regex"
+      },
+      "sources": {
+        "preset": "Preset",
+        "custom": "Custom"
+      },
+      "table": {
+        "source": "Source",
+        "pattern": "Pattern",
+        "mode": "Mode",
+        "type": "Type",
+        "actions": "Actions"
+      }
     }
   },
   "detail": {

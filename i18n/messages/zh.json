@@ -71,6 +71,56 @@
         "fillName": "先填写冰盒名称，系统会顺手帮你生成 machine-id。",
         "invalidMachineId": "machine-id 需要至少保留一个字母、数字或短横线。"
       }
+    },
+    "filter": {
+      "title": "备份过滤规则",
+      "description": "当前共 {count} 条生效规则。",
+      "modeLabel": "过滤模式",
+      "presetsLabel": "快速预设",
+      "selectedPresets": "已选 {count} 个预设",
+      "inheritGitignore": "继承已有 .gitignore 规则（推荐）",
+      "customRuleLabel": "自定义规则",
+      "customRulePlaceholder": "例如 node_modules/** 或 ^(?!skills(?:/|$)).+",
+      "addRule": "+ 添加",
+      "invalidRegex": "正则表达式无效，请检查语法。",
+      "ruleListLabel": "已添加规则",
+      "totalRules": "共 {count} 条",
+      "emptyRules": "还没有添加任何规则。",
+      "remove": "删除",
+      "whitelistNoticeTitle": "白名单模式要小心",
+      "whitelistNoticeDescription": "只有命中的文件会被保留。规则过少时，可能把你真正想备份的内容一起漏掉。",
+      "modes": {
+        "disabled": {
+          "title": "禁用",
+          "description": "备份全部文件，不做过滤。",
+          "short": "禁用"
+        },
+        "blacklist": {
+          "title": "黑名单",
+          "description": "排除匹配到的文件或目录。",
+          "short": "黑名单"
+        },
+        "whitelist": {
+          "title": "白名单",
+          "description": "只保留匹配到的文件或目录。",
+          "short": "白名单"
+        }
+      },
+      "patternTypes": {
+        "glob": "Glob",
+        "regex": "Regex"
+      },
+      "sources": {
+        "preset": "预设",
+        "custom": "自定义"
+      },
+      "table": {
+        "source": "来源",
+        "pattern": "模式",
+        "mode": "过滤模式",
+        "type": "类型",
+        "actions": "操作"
+      }
     }
   },
   "detail": {
