@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
+import { BackupFilterConfig } from "./backup-filter-config";
 import { useMounted } from "@/hooks/use-mounted";
 import {
   createDisabledEncryptionConfig,
@@ -12,10 +13,11 @@ import {
   uploadPayloadEncryptionKeyStrategy,
   uploadPayloadEncryptionScope,
 } from "@/lib/backup-encryption";
+import { getDefaultFilterConfig } from "@/lib/filter-presets";
 import { iceBoxBranchPrefix } from "@/lib/git";
 import { useAppStore } from "@/store/app-store";
 import { useIceBoxStore } from "@/store/ice-box-store";
-import type { IceBoxBackupMode } from "@/types";
+import type { IceBoxBackupMode, IceBoxFilterConfig } from "@/types";
 
 interface OperationNotice {
   message: string;
@@ -82,6 +84,7 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
   const [name, setName] = useState("");
   const [machineId, setMachineId] = useState(() => buildSuggestedMachineId("", machineSuffix));
   const [backupMode, setBackupMode] = useState<IceBoxBackupMode>("git-branch");
+  const [filter, setFilter] = useState<IceBoxFilterConfig>(() => getDefaultFilterConfig());
   const [encryptionEnabled, setEncryptionEnabled] = useState(false);
   const [masterKey, setMasterKey] = useState("");
   const [masterKeyConfirm, setMasterKeyConfirm] = useState("");
@@ -152,7 +155,7 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
         }
       : createDisabledEncryptionConfig(createdAt);
 
-    const result = await createIceBox({ name, machineId: normalizedMachineId, backupMode, gitConfig, encryption });
+    const result = await createIceBox({ name, machineId: normalizedMachineId, backupMode, gitConfig, encryption, filter });
 
     if (!result.ok || !result.item) {
       setError({ message: result.message, details: result.details });
@@ -162,6 +165,7 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
     setName("");
     setMachineId(buildSuggestedMachineId("", createSuffix()));
     setBackupMode("git-branch");
+    setFilter(getDefaultFilterConfig());
     setEncryptionEnabled(false);
     setMasterKey("");
     setMasterKeyConfirm("");
@@ -304,6 +308,8 @@ export function IceBoxCreateForm({ onSuccess, onCancel }: IceBoxCreateFormProps)
             <p className="mt-1 opacity-90">{encryptionError}</p>
           </div>
         ) : null}
+
+        <BackupFilterConfig value={filter} onChange={setFilter} disabled={!hasHydrated || isCreating} />
 
         {submitHint ? (
           <div className={`fridge-state ${submitHint.tone === "warning" ? "fridge-state--warning" : "fridge-state--info"}`}>
