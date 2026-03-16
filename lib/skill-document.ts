@@ -450,19 +450,22 @@ function buildGitSyncScript(config: IceBoxSkillConfig): string {
     if (hasRegexPatterns) {
       const regexPatterns = resolvedPatterns.filter((pattern) => pattern.type === "regex");
       const hasGlobPatterns = resolvedPatterns.some((pattern) => pattern.type === "glob");
-      lines.push('git add -A');
-      lines.push(
-        ...regexPatterns.flatMap((pattern) => [
-          "git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' path; do",
-          `  if printf '%s\\n' "$path" | grep -E --quiet ${escapeShellValue(pattern.pattern)}; then`,
-          '    git reset -q HEAD -- "$path" 2>/dev/null || true',
-          '  fi',
-          'done',
-        ]),
-      );
+
       if (hasGlobPatterns) {
         lines.push('git add -A -- ":(exclude-from)$TEMP_EXCLUDE_FILE"');
+      } else {
+        lines.push('git add -A');
       }
+
+      lines.push(
+        'git diff --cached --name-only | while IFS= read -r path; do',
+        ...regexPatterns.flatMap((pattern, index) => [
+          `${index === 0 ? '  ' : '  el'}if printf '%s\\n' "$path" | grep -E --quiet ${escapeShellValue(pattern.pattern)}; then`,
+          '    git reset -q HEAD -- "$path" 2>/dev/null || true',
+        ]),
+        '  fi',
+        'done',
+      );
     } else {
       lines.push('git add -A -- ":(exclude-from)$TEMP_EXCLUDE_FILE"');
     }
