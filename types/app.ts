@@ -145,6 +145,7 @@ export interface IceBoxSkillConfig {
   uploadToken: string | null;
   scheduledBackup: IceBoxScheduledBackupConfig;
   encryption: IceBoxEncryptionConfig;
+  filter?: IceBoxFilterConfig;
   createdAt: string;
 }
 

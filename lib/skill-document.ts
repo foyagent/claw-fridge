@@ -12,13 +12,23 @@ import {
   createDefaultScheduledBackupConfig,
   normalizeScheduledBackupConfig,
 } from "@/lib/ice-boxes";
+import { getDefaultFilterConfig } from "@/lib/filter-presets";
+import {
+  formatFilterRulesForMarkdown,
+  generateGitExcludeContent,
+  generateWhitelistCheckScript,
+  resolveFilterPatterns,
+} from "@/lib/backup-filter";
 import type {
+  FilterPattern,
   GitAuthMethod,
   IceBoxBackupMode,
   IceBoxEncryptionConfig,
+  IceBoxFilterConfig,
   IceBoxScheduledBackupConfig,
   IceBoxScheduledBackupPreset,
   IceBoxSkillConfig,
+  PatternType,
 } from "@/types";
 import { Base64 } from "js-base64";
 
@@ -167,6 +177,63 @@ function readScheduledBackupConfig(value: unknown): IceBoxScheduledBackupConfig 
     cronExpression: typeof value.cronExpression === "string" ? value.cronExpression : undefined,
     timezone: typeof value.timezone === "string" ? value.timezone : undefined,
   });
+}
+
+function normalizeFilterPattern(value: unknown): FilterPattern | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (!isNonEmptyString(value.pattern)) {
+    return null;
+  }
+
+  const type: PatternType = value.type === "regex" ? "regex" : "glob";
+
+  return {
+    pattern: value.pattern.trim(),
+    type,
+    description: isNonEmptyString(value.description) ? value.description.trim() : undefined,
+  };
+}
+
+function normalizeFilterConfig(value: unknown): IceBoxFilterConfig {
+  const defaults = getDefaultFilterConfig();
+
+  if (!isRecord(value)) {
+    return defaults;
+  }
+
+  const mode = value.mode === "disabled" || value.mode === "blacklist" || value.mode === "whitelist"
+    ? value.mode
+    : defaults.mode;
+
+  const patterns = Array.isArray(value.patterns)
+    ? value.patterns
+        .map((pattern) => normalizeFilterPattern(pattern))
+        .filter((pattern): pattern is FilterPattern => pattern !== null)
+    : defaults.patterns;
+
+  const presets = Array.isArray(value.presets)
+    ? Array.from(
+        new Set(
+          value.presets
+            .filter((preset): preset is string => isNonEmptyString(preset))
+            .map((preset) => preset.trim()),
+        ),
+      )
+    : defaults.presets;
+
+  const inheritGitignore = typeof value.inheritGitignore === "boolean"
+    ? value.inheritGitignore
+    : defaults.inheritGitignore;
+
+  return {
+    mode,
+    patterns,
+    presets,
+    inheritGitignore,
+  };
 }
 
 function escapeYamlString(value: string): string {
@@ -341,7 +408,13 @@ function buildGitSetupScript(config: IceBoxSkillConfig): string {
 }
 
 function buildGitSyncScript(config: IceBoxSkillConfig): string {
-  return [
+  const filterConfig = config.filter;
+  const resolvedPatterns = filterConfig ? resolveFilterPatterns(filterConfig) : [];
+  const gitExcludeContent = filterConfig?.mode === "blacklist" ? generateGitExcludeContent(filterConfig) : "";
+  const whitelistCheckScript = filterConfig?.mode === "whitelist" ? generateWhitelistCheckScript(filterConfig) : "";
+  const hasRegexPatterns = resolvedPatterns.some((pattern) => pattern.type === "regex");
+
+  const lines = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
     "",
@@ -359,13 +432,65 @@ function buildGitSyncScript(config: IceBoxSkillConfig): string {
     '  git checkout "$BRANCH"',
     "fi",
     "",
-    'git add -A',
+  ];
+
+  if (filterConfig?.mode === "blacklist") {
+    lines.push(
+      'TEMP_EXCLUDE_FILE="$(mktemp)"',
+      'cleanup() {',
+      '  rm -f "$TEMP_EXCLUDE_FILE"',
+      '}',
+      'trap cleanup EXIT',
+      `cat <<'EOF' > "$TEMP_EXCLUDE_FILE"`,
+      gitExcludeContent.trimEnd(),
+      'EOF',
+      '',
+    );
+
+    if (hasRegexPatterns) {
+      const regexPatterns = resolvedPatterns.filter((pattern) => pattern.type === "regex");
+      const hasGlobPatterns = resolvedPatterns.some((pattern) => pattern.type === "glob");
+      lines.push('git add -A');
+      lines.push(
+        ...regexPatterns.flatMap((pattern) => [
+          "git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' path; do",
+          `  if printf '%s\\n' "$path" | grep -E --quiet ${escapeShellValue(pattern.pattern)}; then`,
+          '    git reset -q HEAD -- "$path" 2>/dev/null || true',
+          '  fi',
+          'done',
+        ]),
+      );
+      if (hasGlobPatterns) {
+        lines.push('git add -A -- ":(exclude-from)$TEMP_EXCLUDE_FILE"');
+      }
+    } else {
+      lines.push('git add -A -- ":(exclude-from)$TEMP_EXCLUDE_FILE"');
+    }
+  } else if (filterConfig?.mode === "whitelist") {
+    lines.push(
+      whitelistCheckScript.trimEnd(),
+      '',
+      'git add -A',
+      'git reset',
+      "git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' path; do",
+      '  if matches_whitelist_path "$path"; then',
+      '    git add -A -- "$path"',
+      '  fi',
+      'done',
+    );
+  } else {
+    lines.push('git add -A');
+  }
+
+  lines.push(
     'if ! git diff --cached --quiet; then',
     '  git commit -m "$COMMIT_MESSAGE"',
-    "fi",
-    "",
+    'fi',
+    '',
     'git push -u "$REMOTE_NAME" "HEAD:$BRANCH"',
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 function buildLaunchAgentPlist(config: IceBoxSkillConfig): string {
@@ -959,6 +1084,7 @@ export function parseSkillConfig(value: unknown): IceBoxSkillConfig {
     uploadToken: readNullableString(value, "uploadToken"),
     scheduledBackup: readScheduledBackupConfig(value.scheduledBackup),
     encryption: readEncryptionConfig(value.encryption, createdAt),
+    filter: isRecord(value.filter) ? normalizeFilterConfig(value.filter) : undefined,
     createdAt,
   };
 
@@ -1037,6 +1163,8 @@ export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string, o
     `- include-git-credentials-placeholders: \`${includeGitCredentials ? "true" : "false"}\``,
     `- scheduled-backup-enabled: \`${config.scheduledBackup.enabled ? "true" : "false"}\``,
     `- scheduled-backup-summary: ${config.scheduledBackup.enabled ? `\`${buildScheduledBackupDescription(config.scheduledBackup)}\`` : "`<ask-user-during-install>`"}`,
+    `- filter-mode: \`${config.filter?.mode ?? "disabled"}\``,
+    `- filter-presets: ${config.filter?.presets?.length ? config.filter.presets.join(", ") : "<none>"}`,
   ];
 
   if (skillLink) {
@@ -1062,7 +1190,7 @@ export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string, o
     }
   }
 
-  const body = [
+  const sections = [
     contextLines.join("\n"),
     "",
     "## Guardrails",
@@ -1074,13 +1202,22 @@ export function buildSkillMarkdown(config: IceBoxSkillConfig, origin?: string, o
       : "- After each backup attempt, report the branch, destination, and any actionable errors.",
     "",
     buildScheduledBackupSection(config),
+  ];
+
+  if (config.filter && config.filter.mode !== "disabled") {
+    sections.push("", formatFilterRulesForMarkdown(config.filter));
+  }
+
+  sections.push(
     "",
     mode === "restore"
       ? buildRestoreModeInstructions(config, recoveryScriptUrl, includeGitCredentials)
       : config.backupMode === "git-branch"
         ? [buildGitModeInstructions(config), ...(includeGitCredentials ? ["", ...buildCredentialPlaceholderSection(config)] : [])].join("\n")
         : [buildUploadModeInstructions(config, uploadUrl), ...(includeGitCredentials ? ["", ...buildCredentialPlaceholderSection(config)] : [])].join("\n"),
-  ].join("\n");
+  );
+
+  const body = sections.join("\n");
 
   const resolvedBody = includeGitCredentials ? applyResolvedGitCredentials(body, config, options) : body;
 
